@@ -22,6 +22,36 @@ _log = logging.getLogger("comfy.bsai_vdn")
 # ---------------------------------------------------------------------------
 _VDN_PLUGIN = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                             "ComfyUI-VDN-H3")
+
+
+def _auto_install_vdn_h3():
+    """自动安装缺失的 ComfyUI-VDN-H3 依赖插件。
+
+    用户升级本插件后无需手动 clone：启动时若检测到 custom_nodes/ComfyUI-VDN-H3
+    不存在，自动 git clone 官方仓库。vdn_h3 无额外 pip 依赖（只用 ComfyUI 自带
+    的 torch/safetensors），clone 完成后即可在当前进程直接 import。
+    """
+    if os.path.isdir(_VDN_PLUGIN):
+        return True
+    try:
+        import subprocess
+        _log.info("[BSAI VDN] 检测到缺少 ComfyUI-VDN-H3 依赖，正在自动安装（git clone）...")
+        proc = subprocess.run(
+            ["git", "clone", "--depth", "1",
+             "https://github.com/OpenVDN/ComfyUI-VDN-H3", _VDN_PLUGIN],
+            capture_output=True, text=True, timeout=300,
+        )
+        if proc.returncode == 0 and os.path.isdir(_VDN_PLUGIN):
+            _log.info("[BSAI VDN] ComfyUI-VDN-H3 自动安装成功")
+            return True
+        _log.warning(f"[BSAI VDN] ComfyUI-VDN-H3 自动安装失败: {(proc.stderr or '')[:400]}")
+    except Exception as e:
+        _log.warning(f"[BSAI VDN] ComfyUI-VDN-H3 自动安装异常: {e}")
+    return False
+
+
+_auto_install_vdn_h3()
+
 if _VDN_PLUGIN not in sys.path:
     sys.path.insert(0, _VDN_PLUGIN)
 

@@ -10,15 +10,16 @@ VDN-H3 是 MiniMax H3 的**混合注意力加速**方案：新增一条**帧级�
 
 ---
 
-## ⚠️ 安装依赖（必须先装，否则模型列表显示不了）
+## ⚠️ 依赖自动安装（无需手动操作）
 
-本节点调用 **ComfyUI-VDN-H3** 插件提供的原生 `vdn_h3` 运行时。**没有安装它，VDN 模型下拉框会直接显示 `<未安装依赖>`**——即使 `models/vdn` 目录里已经有模型文件，也列不出来。这是"模型目录有文件但显示不出来"的最常见原因。
+本节点调用 **ComfyUI-VDN-H3** 插件提供的原生 `vdn_h3` 运行时。**从 v2.0 起，插件启动时会自动检测并 `git clone` 安装缺失的 ComfyUI-VDN-H3**——用户升级本插件后什么都不用做，首次启动会自动装好依赖（需联网，约 1-2 分钟，日志可见 `[BSAI VDN] ComfyUI-VDN-H3 自动安装成功`）。
 
-```bash
-cd ComfyUI/custom_nodes
-git clone https://github.com/OpenVDN/ComfyUI-VDN-H3
-# 然后重启 ComfyUI
-```
+- 若自动安装失败（无 git / 网络不通），下拉框会显示 `<未安装依赖>`，可手动补装：
+  ```bash
+  cd ComfyUI/custom_nodes
+  git clone https://github.com/OpenVDN/ComfyUI-VDN-H3
+  ```
+- `vdn_h3` 无额外 pip 依赖，只使用 ComfyUI 自带的 torch/safetensors，clone 完成后即可直接使用。
 
 ## 节点
 
@@ -70,6 +71,7 @@ hf download OpenVDN/vdn-minimax-h3 stage-dmd-step-250 --local-dir ComfyUI/models
 
 ## 版本
 
+- v2.1：**依赖自动安装**——启动时自动检测并 clone 缺失的 ComfyUI-VDN-H3，用户升级插件即可全部自动装好。
 - v2.0：重构为一体化 Native Loader（`BSAIVDNH3LoaderNative`）；自实现 VDN stage 扫描（不依赖 spec），兼容标准/嵌套目录结构，结构不完整与依赖缺失均给出明确下拉提示。
 
 ## License
