@@ -18,24 +18,25 @@ import comfy.sd
 _log = logging.getLogger("comfy.bsai_vdn")
 
 # ---------------------------------------------------------------------------
-# 注入 ComfyUI-VDN-H3 插件路径，import 原生 vdn_h3 包
+# vdn_h3 运行时获取顺序：
+#   1) 内嵌 vendor/vdn_h3（本插件自带，用户零安装，Apache-2.0 已随包分发）
+#   2) 外部 ComfyUI-VDN-H3 插件（兼容已装用户）
+#   3) 自动 git clone 兜底（以上都缺失时）
 # ---------------------------------------------------------------------------
+_PLUGIN_ROOT = os.path.dirname(os.path.abspath(__file__))
+_VENDOR_DIR = os.path.join(_PLUGIN_ROOT, "vendor")
+_VENDOR_VDN = os.path.join(_VENDOR_DIR, "vdn_h3")
 _VDN_PLUGIN = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                             "ComfyUI-VDN-H3")
 
 
 def _auto_install_vdn_h3():
-    """自动安装缺失的 ComfyUI-VDN-H3 依赖插件。
-
-    用户升级本插件后无需手动 clone：启动时若检测到 custom_nodes/ComfyUI-VDN-H3
-    不存在，自动 git clone 官方仓库。vdn_h3 无额外 pip 依赖（只用 ComfyUI 自带
-    的 torch/safetensors），clone 完成后即可在当前进程直接 import。
-    """
+    """自动安装缺失的 ComfyUI-VDN-H3 依赖插件（极端兜底：vendor 与外部均缺失时）。"""
     if os.path.isdir(_VDN_PLUGIN):
         return True
     try:
         import subprocess
-        _log.info("[BSAI VDN] 检测到缺少 ComfyUI-VDN-H3 依赖，正在自动安装（git clone）...")
+        _log.info("[BSAI VDN] 内嵌 vdn_h3 缺失且未安装 ComfyUI-VDN-H3，正在自动安装...")
         proc = subprocess.run(
             ["git", "clone", "--depth", "1",
              "https://github.com/OpenVDN/ComfyUI-VDN-H3", _VDN_PLUGIN],
@@ -50,10 +51,15 @@ def _auto_install_vdn_h3():
     return False
 
 
-_auto_install_vdn_h3()
-
-if _VDN_PLUGIN not in sys.path:
-    sys.path.insert(0, _VDN_PLUGIN)
+if os.path.isdir(_VENDOR_VDN):
+    # 内嵌包优先：把 vendor 放到 sys.path 最前，import vdn_h3 命中自带包
+    if _VENDOR_DIR not in sys.path:
+        sys.path.insert(0, _VENDOR_DIR)
+elif _VDN_PLUGIN not in sys.path:
+    # 兜底：外部插件
+    _auto_install_vdn_h3()
+    if _VDN_PLUGIN not in sys.path:
+        sys.path.insert(0, _VDN_PLUGIN)
 
 try:
     from vdn_h3.apply import apply_adapters
