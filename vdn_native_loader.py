@@ -38,6 +38,101 @@ except Exception as e:
 
 
 # ---------------------------------------------------------------------------
+# VDN stage 目录扫描（不依赖 vdn_h3.spec，自实现，兼容多种放置方式）
+# ---------------------------------------------------------------------------
+def _get_vdn_roots():
+    """返回所有应扫描的 VDN 模型根目录：
+      - 标准: ComfyUI/models/vdn（folder_paths 注册的 "vdn"）
+      - 兼容旧 README 路径: ComfyUI/models/vdn_h3
+    """
+    roots = []
+    try:
+        if "vdn" not in folder_paths.folder_names_and_paths:
+            for base in {os.path.dirname(p) for p in folder_paths.get_folder_paths("loras")}:
+                folder_paths.add_model_folder_path("vdn", os.path.join(base, "vdn"))
+        roots = list(folder_paths.get_folder_paths("vdn"))
+    except Exception:
+        roots = []
+    try:
+        legacy = os.path.join(folder_paths.base_path, "models", "vdn_h3")
+        if os.path.isdir(legacy) and legacy not in roots:
+            roots.append(legacy)
+    except Exception:
+        pass
+    return roots
+
+
+def _stage_has_branch(d):
+    """stage 目录有效判定：linear_branch/ 子目录下存在 .safetensors/.bin 分支文件。"""
+    lb = os.path.join(d, "linear_branch")
+    if os.path.isdir(lb):
+        try:
+            for f in os.listdir(lb):
+                if f.lower().endswith((".safetensors", ".bin")):
+                    return True
+        except OSError:
+            return False
+    return False
+
+
+def _list_vdn_stages():
+    """递归扫描 VDN 根目录，返回结构完整（含 linear_branch 分支文件）的 stage 相对名。
+    兼容嵌套两层目录（vdn/stage-x/stage-x/...），自动取有效层去重。"""
+    found = []
+    for root in _get_vdn_roots():
+        if not os.path.isdir(root):
+            continue
+        for dirpath, dirnames, _files in os.walk(root):
+            if os.path.basename(dirpath) == "linear_branch":
+                continue  # 由父 stage 目录判定，避免把 linear_branch 本身当 stage
+            rel = os.path.relpath(dirpath, root).replace("\\", "/")
+            if rel == ".":
+                continue
+            if _stage_has_branch(dirpath):
+                found.append(rel)
+                dirnames[:] = []
+    return sorted(set(found))
+
+
+def _dir_contains_valid_stage(d):
+    """目录本身或其任一子目录是否包含有效 stage（递归）。"""
+    if _stage_has_branch(d):
+        return True
+    try:
+        for name in os.listdir(d):
+            sub = os.path.join(d, name)
+            if os.path.isdir(sub) and _dir_contains_valid_stage(sub):
+                return True
+    except OSError:
+        pass
+    return False
+
+
+def _detect_malformed_stages():
+    """检测"模型在但显示不出来"的结构问题：根目录下有 stage-* 目录，
+    但自身及子目录都不含 linear_branch 分支文件（结构不完整/为空）。"""
+    hints = []
+    for root in _get_vdn_roots():
+        if not os.path.isdir(root):
+            continue
+        try:
+            names = sorted(os.listdir(root))
+        except OSError:
+            continue
+        for name in names:
+            d = os.path.join(root, name)
+            if not os.path.isdir(d) or not name.startswith("stage-"):
+                continue
+            if _dir_contains_valid_stage(d):
+                continue
+            hints.append(
+                f"<⚠ {name} 目录存在但结构不完整：需放置 {name}/linear_branch/model.safetensors "
+                f"（官方结构，参见 README）>"
+            )
+    return hints
+
+
+# ---------------------------------------------------------------------------
 # ChunkFeedForward 实现（移植自 KJNodes MiniMaxChunkFeedForward）
 # ---------------------------------------------------------------------------
 def _minimax_mlp_chunked_forward(self, x, *args, **kwargs):
@@ -107,11 +202,20 @@ class BSAIVDNH3LoaderNative:
         if not h3_names:
             h3_names = unet_names
 
-        # VDN checkpoint 列表
-        try:
-            vdn_names = spec.list_vdn_checkpoints() if _VDN_NATIVE_AVAILABLE else []
-        except Exception:
-            vdn_names = []
+        # VDN checkpoint 列表（自实现扫描，兼容 models/vdn 与旧 models/vdn_h3）
+        if _VDN_NATIVE_AVAILABLE:
+            try:
+                vdn_names = _list_vdn_stages()
+            except Exception:
+                vdn_names = []
+            # 结构不完整提示项（模型在但显示不出来的常见原因）
+            try:
+                vdn_names += _detect_malformed_stages()
+            except Exception:
+                pass
+            vdn_names = vdn_names or ["<无VDN stage：models/vdn 下未找到含 linear_branch 的 stage 目录>"]
+        else:
+            vdn_names = ["<未安装依赖：请先安装 ComfyUI-VDN-H3 插件>"]
 
         return {"required": {
             "unet_name": (h3_names or ["<无H3模型>"], {
@@ -150,7 +254,15 @@ class BSAIVDNH3LoaderNative:
         if not _VDN_NATIVE_AVAILABLE:
             raise RuntimeError(
                 "BSAI VDN-H3 Loader 需要 ComfyUI-VDN-H3 插件（vdn_h3 包）。"
-                "请确认 custom_nodes/ComfyUI-VDN-H3 存在且可正常加载。")
+                "请先安装 custom_nodes/ComfyUI-VDN-H3（git clone "
+                "https://github.com/OpenVDN/ComfyUI-VDN-H3），"
+                "再重启 ComfyUI。模型目录有文件但下拉框显示不了，多半是此依赖缺失。")
+
+        if str(vdn_checkpoint).startswith("<"):
+            raise RuntimeError(
+                f"请先修复 VDN 模型问题后再运行：{vdn_checkpoint}\n"
+                "正确结构：ComfyUI/models/vdn/<stage名>/linear_branch/model.safetensors（或 "
+                "model_int8_convrot_comfyui.safetensors）。")
 
         # 1. 加载 H3 主模型（必须传完整路径，load_diffusion_model不做路径解析）
         _log.info(f"[BSAI VDN] 加载主模型: {unet_name}")
