@@ -69,6 +69,19 @@ hf download OpenVDN/vdn-minimax-h3 stage-dmd-step-250 --local-dir ComfyUI/models
 
 `example_workflows/` 下提供参考工作流，`Workflow → Open` 加载后把 `unet_name` / `vdn_checkpoint` 换成你本机实际模型即可。
 
+## 故障排查：模型下拉框不显示（对号入座）
+
+升级插件后若 `vdn_checkpoint` 下拉框仍不显示模型，**直接看下拉框里的提示文字**，对应处理：
+
+| 下拉框显示 | 原因 | 解决 |
+|---|---|---|
+| `<未安装依赖：请先安装 ComfyUI-VDN-H3 插件>` | 自动安装未成功（无 git / 离线 / 网络不通） | 手动执行 `git clone https://github.com/OpenVDN/ComfyUI-VDN-H3` 到 `custom_nodes/` 后重启 |
+| `<⚠ stage-xxx 目录存在但结构不完整：需放置 stage-xxx/linear_branch/model.safetensors>` | 模型目录结构不对（缺 `linear_branch/` 子目录，或只解压了 stage 根目录） | 重新下载/摆正结构：`models/vdn/stage-xxx/linear_branch/model.safetensors`（或 `model_int8_convrot_comfyui.safetensors`） |
+| `<无VDN stage：models/vdn 下未找到含 linear_branch 的 stage 目录>` | models/vdn 下没有模型，或模型放在别处 | 用 `hf download OpenVDN/vdn-minimax-h3 stage-dmd-step-250 --local-dir ComfyUI/models/vdn` 下载；检查模型是否放在 `models/vdn`（不是 `models/vdn_h3`、`models/checkpoints`） |
+| 正常显示 `stage-dmd-step-250` 等 | ✅ 一切正常 | 直接选用即可 |
+
+> 速查：**有文件却不显示 = ①依赖没装上（看是否显示"未安装依赖"）②模型结构不完整（看是否显示"结构不完整"）③模型放错目录**。三种情况下拉框都会直接写明，不再是无提示的"无VDN stage"。
+
 ## 版本
 
 - v2.1：**依赖自动安装**——启动时自动检测并 clone 缺失的 ComfyUI-VDN-H3，用户升级插件即可全部自动装好。
