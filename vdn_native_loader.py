@@ -173,7 +173,7 @@ def _detect_malformed_stages():
 # ---------------------------------------------------------------------------
 def _minimax_mlp_chunked_forward(self, x, *args, **kwargs):
     """SwiGLU MLP 分块前向，降低峰值显存。"""
-    chunks = getattr(self, "kj_num_chunks", 2)
+    chunks = getattr(self, "kj_num_chunks", 8)
     seq_threshold = getattr(self, "kj_seq_threshold", 4096)
     if x.shape[0] <= seq_threshold or chunks == 1:
         return self._original_forward(x, *args, **kwargs)
@@ -202,7 +202,7 @@ class _FFNChunkPatch:
         return types.MethodType(wrapped_forward, obj)
 
 
-def _apply_chunk_ffn(model, chunks=2, seq_threshold=4096):
+def _apply_chunk_ffn(model, chunks=8, seq_threshold=4096):
     """对 H3 模型的所有 block MLP 应用分块前向。"""
     if chunks <= 1:
         return model
@@ -273,7 +273,7 @@ class BSAIVDNH3LoaderNative:
             "linear_branch": ("BOOLEAN", {"default": True}),
             "fast_kernels": ("BOOLEAN", {"default": True}),
             "chunk_ffn": ("BOOLEAN", {"default": True, "tooltip": "启用 ChunkFeedForward 分块前馈加速"}),
-            "chunks": ("INT", {"default": 2, "min": 1, "max": 64}),
+            "chunks": ("INT", {"default": 8, "min": 1, "max": 64}),
             "seq_threshold": ("INT", {"default": 4096, "min": 256, "max": 262144, "step": 256}),
         }}
 
