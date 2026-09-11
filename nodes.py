@@ -1351,16 +1351,22 @@ class BSAIVDNH3FaceOil:
                 else:
                     mask = np.zeros_like(mask)
 
-            smooth = cv2.bilateralFilter(bgr, d=max(radius | 1, 5), sigmaColor=40, sigmaSpace=radius)
+            # GaussianBlur 而非 bilateralFilter: 双边滤波保边, 在均匀高光区
+            # 输出≈输入压不暗油光; 高斯模糊把高光与周围较暗肤色混合, 真正压暗。
+            k = int(radius) | 1
+            smooth = cv2.GaussianBlur(bgr, (k, k), 0)
             m = mask * strength
             out = bgr.astype("float32") * (1 - m[..., None]) + smooth.astype("float32") * (m[..., None])
             out = out.clip(0, 255).astype("uint8")
             out_rgb = cv2.cvtColor(out, cv2.COLOR_BGR2RGB)
             out_list.append(torch.from_numpy(out_rgb.astype("float32") / 255.0))
+            mask_cov = float(mask.mean())
 
         result = torch.stack(out_list, dim=0).to(dev)
+        _cov = locals().get("mask_cov", -1.0)
         info = (f"[BSAI VDN-H3 FaceOil] strength={strength} thr={bright_thr}/{sat_thr} "
-                f"radius={radius} face_only={face_only} faces={faces_total}")
+                f"radius={radius} face_only={face_only} faces={faces_total} "
+f"mask_cov={_cov:.4f}")
         print(info, flush=True)
         return (result, info)
 
