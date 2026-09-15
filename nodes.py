@@ -780,8 +780,30 @@ class BSAIVDNH3Loader:
         path, merge_job = _resolve_backbone_path(backbone, model_options, info)
         if merge_job is not None:
             path = merge_job
-        model = comfy.sd.load_diffusion_model(path, model_options=model_options)
-        info.append(f"[BSAI VDN-H3] 基座已加载: {os.path.basename(path)} | weight_dtype={weight_dtype}")
+
+        # v1.2: 验证模型参数完整性——ComfyUI 模型缓存复用时可能返回空模型
+        # （31.7GB VDN 基座 > 24GB 显存，上次运行 offload 后缓存对象参数被清空，
+        #   本次复用缓存 -> model_size≈0 -> 采样时 condition_proj.weight=None 崩溃）。
+        # 验证失败则清空模型缓存并强制重载，确保每次 Loader 输出前模型参数完整。
+        model = None
+        for _attempt in range(3):
+            _m = comfy.sd.load_diffusion_model(path, model_options=model_options)
+            try:
+                _sz = _m.model_size() / 1024 ** 3
+            except Exception:
+                _sz = 0.0
+            if _sz >= 1.0:
+                model = _m
+                break
+            info.append(f"[BSAI VDN-H3] 基座参数异常({_sz:.1f}GB)，清除模型缓存重载(第{_attempt + 1}次)")
+            del _m
+            import gc as _gc
+            _gc.collect()
+            comfy.model_management.unload_all_models()
+            torch.cuda.empty_cache()
+        if model is None:
+            raise RuntimeError(f"[BSAI VDN-H3] 基座 {os.path.basename(path)} 加载后参数为空（重试3次仍失败）。")
+        info.append(f"[BSAI VDN-H3] 基座已加载: {os.path.basename(path)} ({_sz:.1f}GB) | weight_dtype={weight_dtype}")
 
         # 定位 stage 目录
         stage_dir = ""
