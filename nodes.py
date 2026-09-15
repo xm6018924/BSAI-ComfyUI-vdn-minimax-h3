@@ -524,10 +524,39 @@ def _merge_linear_branch(model, stage_dir, enabled=True, software_fallback=True)
         print(f"[BSAI VDN-H3] 未找到 linear_branch（{lb_path}），跳过线性分支合并。", flush=True)
         return model
 
+    # v1.3 修复（崩溃根因）:
+    # ComfyUI 0.35 的量化模型在 load_state_dict(strict=False) 时，若 state_dict 中有
+    # 大量不匹配键（linear_branch 键为 transformer_blocks.*，H3 主干为 blocks.*），
+    # 会把未匹配层（如 condition_proj）权重置 None -> 采样时 condition_proj.weight=None
+    # AttributeError 崩溃。先备份 condition_proj，任何路径 load 后校验恢复。
+    _cp_backup = None
+    try:
+        _dm0 = model.get_model_object("diffusion_model")
+        _cp0 = getattr(_dm0, "condition_proj", None)
+        if _cp0 is not None and getattr(_cp0, "weight", None) is not None:
+            _cp_backup = (_cp0.weight, _cp0.bias)
+    except Exception:
+        pass
+
+    def _restore_condition_proj(model):
+        if _cp_backup is None:
+            return model
+        try:
+            _dm = model.get_model_object("diffusion_model")
+            _cp = getattr(_dm, "condition_proj", None)
+            if _cp is not None and getattr(_cp, "weight", None) is None:
+                _cp.weight = _cp_backup[0]
+                if _cp_backup[1] is not None:
+                    _cp.bias = _cp_backup[1]
+                print("[BSAI VDN-H3] 已恢复 condition_proj 权重（防 ComfyUI load_state_dict 置空）", flush=True)
+        except Exception:
+            pass
+        return model
+
     native_ok = _linear_native_ok()
 
     if native_ok:
-        # 原生模式：直接加载权重
+        # 原生模式：直接加载权重（FA4 模型结构含 transformer_blocks，键匹配才有效）
         print(f"[BSAI VDN-H3] 合并 linear_branch (原生FA4模式): {lb_path}", flush=True)
         sd = comfy.utils.load_torch_file(lb_path, safe_load=True)
         dm = model.get_model_object("diffusion_model")
@@ -536,6 +565,7 @@ def _merge_linear_branch(model, stage_dir, enabled=True, software_fallback=True)
             print(f"[BSAI VDN-H3] linear_branch 合并完成  missing={len(m)} unexpected={len(u)}", flush=True)
         except Exception as e:
             print(f"[BSAI VDN-H3] linear_branch 合并失败（不影响基座）: {e}", flush=True)
+        model = _restore_condition_proj(model)
         return model
 
     if not software_fallback:
@@ -558,18 +588,13 @@ def _merge_linear_branch(model, stage_dir, enabled=True, software_fallback=True)
     print(f"[BSAI VDN-H3] linear_branch 权重统计: short_conv={len(short_conv_keys)}, "
           f"gate={len(gate_keys)}, out_linear={len(out_linear_keys)}, alpha={len(alpha_keys)}", flush=True)
 
-    # 尝试直接加载（如果模型结构部分支持）
-    dm = model.get_model_object("diffusion_model")
-    try:
-        m, u = dm.load_state_dict(sd, strict=False)
-        matched = len([k for k in sd.keys() if k not in m])
-        print(f"[BSAI VDN-H3] linear_branch 直接加载: matched={matched}/{len(sd)} "
-              f"missing={len(m)} unexpected={len(u)}", flush=True)
-    except Exception as e:
-        print(f"[BSAI VDN-H3] linear_branch 直接加载跳过: {e}", flush=True)
-
+    # v1.3: 不再对 diffusion_model 调 load_state_dict —— linear_branch 键全部为
+    # transformer_blocks.*（VDN diffusers 布局），H3 主干为 blocks.*，800 键全部
+    # unexpected，加载等于无效；且 ComfyUI 0.35 量化模型 load_state_dict 会清空
+    # 未匹配层（condition_proj）权重导致采样崩溃。直接走软件回退注入即可。
     # 软件回退：通过 model_patching 注入短卷积增强
     model = _inject_software_linear_attention(model, sd)
+    model = _restore_condition_proj(model)
     return model
 
 
