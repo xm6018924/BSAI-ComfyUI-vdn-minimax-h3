@@ -123,7 +123,7 @@ def _diffusers_lora_to_comfy(state, prefix="transformer."):
             # 收集 A/B 对，二次遍历合并
             continue
         # ComfyUI 标准格式: lora_unet_ + 下划线分隔 + .diff 后缀（delta权重）
-        comfy_key = "lora_unet_" + key.replace(".", "_")
+        comfy_key = key
         if comfy_key.endswith("_weight"):
             comfy_key = comfy_key[:-len("_weight")]
         out[comfy_key + ".diff"] = v
@@ -149,7 +149,7 @@ def _diffusers_lora_to_comfy(state, prefix="transformer."):
             else:
                 merged = wa * wb
             # ComfyUI 标准格式: lora_unet_ + 下划线分隔 + .diff 后缀（delta权重）
-            comfy_key = "lora_unet_" + base.replace(".", "_")
+            comfy_key = base
             out[comfy_key + ".diff"] = merged
     return out
 
@@ -178,7 +178,7 @@ def _vdn_lora_to_comfy(state):
     for k in list(state.keys()):
         key = k
         if key.startswith("transformer_blocks."):
-            key = key[len("transformer_blocks."):]
+            key = "blocks." + key[len("transformer_blocks."):]
         key = key.replace(".orig.", ".")
         key = re.sub(r'\.(lora_[AB])\.(turbo|default)\.weight$', r'.\1.weight', key)
         if key.endswith(".lora_A.weight"):
@@ -244,15 +244,25 @@ def _vdn_lora_to_comfy(state):
     gc.collect()
 
     # Step 3: 按 block 分组并进行 qkv 合并
+    # 注意: VDN turbo 键是 blocks.N.attn.to_q（点分 blocks.N），
+    # 必须把 blocks.N 整体作为 block_idx，rest 才能被 qkv 合并逻辑正确识别
     out = {}
     block_deltas = {}
     for base, delta in deltas.items():
-        parts = base.split(".", 1)
-        if len(parts) < 2:
-            del delta
-            continue
-        block_idx = parts[0]
-        rest = parts[1]
+        if base.startswith("blocks."):
+            parts = base.split(".", 2)
+            if len(parts) < 3:
+                del delta
+                continue
+            block_idx = parts[0] + "." + parts[1]
+            rest = parts[2]
+        else:
+            parts = base.split(".", 1)
+            if len(parts) < 2:
+                del delta
+                continue
+            block_idx = parts[0]
+            rest = parts[1]
         if block_idx not in block_deltas:
             block_deltas[block_idx] = {}
         block_deltas[block_idx][rest] = delta
@@ -273,30 +283,73 @@ def _vdn_lora_to_comfy(state):
             if v_delta.is_cuda: v_delta = v_delta.cpu()
             qkv_delta = torch.cat([q_delta, k_delta, v_delta], dim=0)
             del q_delta, k_delta, v_delta
-            out[f"lora_unet_blocks_{block_idx}_attn_qkv_proj.diff"] = qkv_delta
+            out[f"{block_idx}.attn.qkv_proj.diff"] = qkv_delta
         elif q_delta is not None:
-            out[f"lora_unet_blocks_{block_idx}_attn_qkv_proj.diff"] = q_delta
+            out[f"{block_idx}.attn.qkv_proj.diff"] = q_delta
 
         # to_out.0 -> out_proj
         out_delta = rest_map.pop("attn.to_out.0", None)
         if out_delta is not None:
-            out[f"lora_unet_blocks_{block_idx}_attn_out_proj.diff"] = out_delta
+            out[f"{block_idx}.attn.out_proj.diff"] = out_delta
 
         # ff.net.0.proj -> mlp.fc1
         fc1_delta = rest_map.pop("ff.net.0.proj", None)
         if fc1_delta is not None:
-            out[f"lora_unet_blocks_{block_idx}_mlp_fc1.diff"] = fc1_delta
+            out[f"{block_idx}.mlp.fc1.diff"] = fc1_delta
 
         # ff.net.2 -> mlp.fc2
         fc2_delta = rest_map.pop("ff.net.2", None)
         if fc2_delta is not None:
-            out[f"lora_unet_blocks_{block_idx}_mlp_fc2.diff"] = fc2_delta
+            out[f"{block_idx}.mlp.fc2.diff"] = fc2_delta
 
         # adaln_proj.linear
         adaln_delta = rest_map.pop("adaln_proj.linear", None)
         if adaln_delta is not None:
-            out[f"lora_unet_blocks_{block_idx}_adaln_proj_linear.diff"] = adaln_delta
+            out[f"{block_idx}.adaln_proj.linear.diff"] = adaln_delta
 
+        # token_refiner: refiner_blocks.N.* -> blocks.N.*（与基座 token_refiner.blocks.N 对齐）
+        # 且 attn.to_q/to_k/to_v 需合并为 qkv_proj（基座为 qkv 合并结构）
+        if block_idx == "token_refiner":
+            tr_out = {}
+            tr_groups = {}
+            for rest, delta in rest_map.items():
+                if rest.startswith("refiner_blocks."):
+                    rest = rest[len("refiner_blocks."):]  # N.attn.to_q
+                p2 = rest.split(".", 1)
+                if len(p2) == 2 and p2[0].isdigit():
+                    tr_groups.setdefault(p2[0], {})[p2[1]] = delta
+                else:
+                    tr_out[f"token_refiner.{rest}.diff"] = delta
+            for n, rm in tr_groups.items():
+                q = rm.pop("attn.to_q", None)
+                k = rm.pop("attn.to_k", None)
+                v = rm.pop("attn.to_v", None)
+                if q is not None and k is not None and v is not None:
+                    if q.is_cuda: q = q.cpu()
+                    if k.is_cuda: k = k.cpu()
+                    if v.is_cuda: v = v.cpu()
+                    tr_out[f"token_refiner.blocks.{n}.attn.qkv_proj.diff"] = torch.cat([q, k, v], dim=0)
+                o = rm.pop("attn.to_out.0", None)
+                if o is not None:
+                    tr_out[f"token_refiner.blocks.{n}.attn.out_proj.diff"] = o
+                f1 = rm.pop("ff.net.0.proj", None)
+                if f1 is not None:
+                    tr_out[f"token_refiner.blocks.{n}.mlp.fc1.diff"] = f1
+                f2 = rm.pop("ff.net.2", None)
+                if f2 is not None:
+                    tr_out[f"token_refiner.blocks.{n}.mlp.fc2.diff"] = f2
+                for sub, d in rm.items():
+                    tr_out[f"token_refiner.blocks.{n}.{sub}.diff"] = d
+            for kk, vv in tr_out.items():
+                out[kk] = vv
+            for v in rest_map.values():
+                del v
+            continue
+
+        # 非 blocks 的剩余 delta（norm_out 等）直接输出 generic 键，
+        # 与 ComfyUI 对无前缀 minimax 基座的 key_map（model_lora_keys_unet generic 分支）对齐
+        for rest, v in rest_map.items():
+            out[f"{block_idx}.{rest}.diff"] = v
         # 释放剩余未处理的delta
         for v in rest_map.values():
             del v

@@ -6,6 +6,18 @@
 
 ---
 
+## 最近更新 / Recent Updates
+
+### v1.1（2026-09-15）关键修复：VDN turbo/default LoRA 从未真正生效 / Critical fix: VDN turbo/default LoRA was never actually applied
+
+**中 / ZH**：此前 BSAIVDNH3Loader 合并 turbo/default LoRA 时，转换键为 lora_unet_blocks_*（musubi 风格），但 ComfyUI 的 model_lora_keys_unet 只对带 diffusion_model. 前缀的基座键生成 lora_unet_* 映射；MiniMax H3 基座（minimax_h3_fl2va_int8_convrot 等）为无前缀结构，导致 **250 个 lora key not loaded: ...attn_qkv_proj.diff 警告、turbo 适配器实际从未应用**（8步+turbo 画质模式缺失蒸馏适配器）。已修复：① 转换输出键改为与基座一致的 generic 键名（locks.N.attn.qkv_proj.diff 等）；② 	ransformer_blocks.N 保留完整 block_idx（不再丢失）；③ token_refiner 
+efiner_blocks.N → locks.N 并对齐 qkv 合并结构。已验证：load_lora patch_dict **258/258 键全部应用**（blocks 50×5 + token_refiner 2×4）。
+
+**EN / English**: Previously BSAIVDNH3Loader merged the VDN turbo/default LoRA using lora_unet_blocks_* keys (musubi-style), but ComfyUI's model_lora_keys_unet only generates lora_unet_* mappings for base keys prefixed with diffusion_model.; the MiniMax H3 base (e.g. minimax_h3_fl2va_int8_convrot) is prefix-less, so all **250 lora key not loaded: ...attn_qkv_proj.diff warnings** appeared and the turbo adapter was **never actually applied** (the 8-step + turbo quality mode ran without the distillation adapter). Fixed: ① converted keys now use generic names matching the base (locks.N.attn.qkv_proj.diff etc.); ② 	ransformer_blocks.N keeps its full block index; ③ token_refiner 
+efiner_blocks.N → locks.N with qkv merged. Verified: load_lora patch_dict applies **258/258 keys** (blocks 50×5 + token_refiner 2×4).
+
+---
+
 ## 插件介绍 / Introduction
 
 **VDN-H3** 是 MiniMax H3 的**混合注意力加速**方案：新增一条**帧级线性注意力分支**（高效）+ 保留 **softmax 分支**（维持视觉质量与一致性），配合 **default（50 步质量）** 与 **turbo（8 步 DMD2 蒸馏）** 两个小 LoRA 适配器，即插即用合并进骨干网络，实现"比播放还快"的视频生成（官方：8×B200 上 14.4 秒片段 8 步去噪仅 11.23 秒）。
