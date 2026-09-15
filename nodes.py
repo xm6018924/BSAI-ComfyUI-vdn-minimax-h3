@@ -402,6 +402,20 @@ def _load_diffusers_lora_into_model(model, lora_path, strength=1.0):
             f"[BSAI VDN-H3] 无法从 {lora_path} 解析 LoRA keys（未知格式）。"
             "请改用 ComfyUI 标准 LoRA（models/loras）。")
     model, _ = comfy.sd.load_lora_for_models(model, None, converted, strength, 0.0)
+    # v1.5: pruned 基座 adaln 结构性不匹配处理。
+    # pruned 模型 adaln_proj.linear.weight = [96768, 8]（时间嵌入被剪到 8 维），
+    # turbo LoRA 按未剪枝模型训练 = delta [96768, 2688]。ComfyUI 每 block forward
+    # 都尝试合并失败并刷 WARNING SHAPE MISMATCH（满屏且重复开销）。
+    # 此处检测后剔除该 patch：不再尝试合并（不刷屏、省开销），attn/mlp 仍完整生效。
+    try:
+        _rm_adaln = [k for k in list(model.patches.keys()) if "adaln_proj.linear" in k]
+        for _k in _rm_adaln:
+            del model.patches[_k]
+        if _rm_adaln:
+            print(f"[BSAI VDN-H3] pruned 基座 adaln 结构性不匹配, 剔除 {len(_rm_adaln)} 个 adaln patch "
+                  f"(turbo 按未剪枝模型训练 [*,2688] vs pruned [*,8]; attn/mlp 调制仍完整生效)", flush=True)
+    except Exception:
+        pass
     # 加载后立即释放
     del converted
     gc.collect()
