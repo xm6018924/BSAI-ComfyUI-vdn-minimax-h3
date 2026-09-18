@@ -574,6 +574,24 @@ def _merge_linear_branch(model, stage_dir, enabled=True, software_fallback=True)
         print(f"[BSAI VDN-H3] 合并 linear_branch (原生FA4模式): {lb_path}", flush=True)
         sd = comfy.utils.load_torch_file(lb_path, safe_load=True)
         dm = model.get_model_object("diffusion_model")
+        # v1.6: 键布局预检查。linear_branch 为 VDN diffusers 布局(transformer_blocks.*)，
+        # ComfyUI H3 基座为 blocks.*。键布局不匹配时 load_state_dict 只会把未匹配
+        # 量化层 weight 置 None（ComfyUI 0.35+ 量化 ops 行为，v1.3 仅恢复 condition_proj，
+        # 其余层仍为 None -> token_refiner qkv_proj 崩溃），且无任何权重注入收益。
+        # 检查 sd 顶层前缀是否全部被基座识别：否 -> 转软件回退注入。
+        try:
+            _lb_top = set(k.split(".")[0] for k in sd.keys())
+            _dm_top = set(dm._modules.keys())
+            print(f"[BSAI VDN-H3] linear_branch 顶层={sorted(_lb_top)} | "
+                  f"基座顶层={sorted(_dm_top)} | 交集={sorted(_lb_top & _dm_top)}", flush=True)
+            if not _lb_top.issubset(_dm_top):
+                print("[BSAI VDN-H3] 键布局不匹配: 原生FA4 load_state_dict 将清空量化权重且无增强, "
+                      "转为软件回退注入", flush=True)
+                model = _inject_software_linear_attention(model, sd)
+                model = _restore_condition_proj(model)
+                return model
+        except Exception as _e:
+            print(f"[BSAI VDN-H3] 键布局预检查异常({_e}), 继续原生加载", flush=True)
         try:
             m, u = dm.load_state_dict(sd, strict=False)
             print(f"[BSAI VDN-H3] linear_branch 合并完成  missing={len(m)} unexpected={len(u)}", flush=True)
