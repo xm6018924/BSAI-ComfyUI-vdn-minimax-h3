@@ -34,6 +34,24 @@ import comfy.sd
 import comfy.utils
 import folder_paths
 
+# ==== BSAI 插件协同 SDK：加载即自动注册（失败不拖垮插件） ====
+try:
+    import sys as _bsai_sys, os as _bsai_os
+    _BSAI_ORCH_DIR = _bsai_os.path.join(
+        _bsai_os.path.dirname(_bsai_os.path.abspath(__file__)),
+        "..", "BSAI-ComfyUI-Orchestrator")
+    if _bsai_os.path.isdir(_BSAI_ORCH_DIR) and _BSAI_ORCH_DIR not in _bsai_sys.path:
+        _bsai_sys.path.insert(0, _BSAI_ORCH_DIR)
+    from bsai_orch_client import BSAIOrch  # noqa: E402
+    BSAIOrch.register(
+        name="BSAI-vdn-minimax-h3",
+        kind="sampling",
+        hardware=["cuda"],
+    )
+except Exception as _bsai_e:  # 注册失败不得拖垮插件
+    print(f"[BSAI SDK] BSAI-vdn-minimax-h3 注册失败(忽略): {_bsai_e}")
+# ==== BSAI SDK 块结束 ====
+
 # ---------------------------------------------------------------------------
 # 常量
 # ---------------------------------------------------------------------------
@@ -1093,6 +1111,16 @@ def _vdn_euler(model, x, sigmas, extra_args=None, callback=None, disable=None,
     s_in = x.new_ones([x.shape[0]])
     _rms = lambda t: float(t.float().pow(2).mean().sqrt())
 
+    # ---- BSAI 协同：GPU 主采样租约（短任务 watchdog=False；失败不阻断采样） ----
+    _bsai_alloc = None
+    try:
+        _bsai_alloc = BSAIOrch.allocate("sampling", requester="8191", watchdog=False)
+        if not _bsai_alloc.ok:
+            print(f"[BSAI VDN-H3] SDK 未取得 gpu1_sampling 租约({_bsai_alloc.reason})，仍按原逻辑采样", flush=True)
+    except Exception as _bsai_ae:
+        print(f"[BSAI VDN-H3] SDK allocate 异常(忽略): {_bsai_ae}", flush=True)
+        _bsai_alloc = None
+
     if schedule_mode == "native" or (schedule_mode == "auto" and _native_av_schedule(model)):
         for i in range(len(sigmas) - 1):
             sv, sv_n = float(sigmas[i]), float(sigmas[i + 1])
@@ -1103,6 +1131,11 @@ def _vdn_euler(model, x, sigmas, extra_args=None, callback=None, disable=None,
             if callback is not None:
                 callback({"i": i, "denoised": denoised, "x": x,
                           "sigma": sigmas[i], "sigma_hat": sigmas[i]})
+        if _bsai_alloc is not None:
+            try:
+                _bsai_alloc.release()
+            except Exception:
+                pass
         return x
 
     # 旧版：视频/音频各自 flow 调度
@@ -1136,6 +1169,11 @@ def _vdn_euler(model, x, sigmas, extra_args=None, callback=None, disable=None,
         if callback is not None:
             callback({"i": i, "denoised": denoised, "x": x,
                       "sigma": sigmas[i], "sigma_hat": sigmas[i]})
+    if _bsai_alloc is not None:
+        try:
+            _bsai_alloc.release()
+        except Exception:
+            pass
     return x
 
 
