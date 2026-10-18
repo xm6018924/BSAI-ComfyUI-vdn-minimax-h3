@@ -40,11 +40,11 @@
         "Node name for S&R": "BSAIVDNH3Loader"
       },
       "widgets_values": [
-        "🔄 VDN h3-base (diffusers分片,自动合并)",
+        "🔄 VDN h3-base (diffusers shards, auto-merge)",
         "stage-dmd-step-250",
         true,
         true,
-        "🎨 画质优先 (16步+双LoRA)",
+        "🎨 Quality (16 steps + dual LoRA)",
         false,
         true,
         1.0,
@@ -224,7 +224,7 @@
         "Node name for S&R": "BSAIVDNH3Timesteps"
       },
       "widgets_values": [
-        "8 步 turbo",
+        "8-step turbo",
         "999,750,500,250"
       ],
       "title": "VDN 精确时间步"

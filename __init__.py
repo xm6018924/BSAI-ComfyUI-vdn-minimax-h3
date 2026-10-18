@@ -24,7 +24,7 @@ try:
         os.makedirs(_VDN_DIR, exist_ok=True)
     folder_paths.add_model_folder_path("vdn", _VDN_DIR)
 except Exception as e:
-    logging.warning(f"[BSAI VDN-H3] 无法创建/注册 vdn 模型目录 {_VDN_DIR}: {e}")
+    logging.warning(f"[BSAI VDN-H3] Cannot create/register vdn model directory {_VDN_DIR}: {e}")
 
 from .nodes import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
 
@@ -37,6 +37,6 @@ try:
     NODE_CLASS_MAPPINGS = {**NODE_CLASS_MAPPINGS, **_NATIVE_MAPPINGS}
     NODE_DISPLAY_NAME_MAPPINGS = {**NODE_DISPLAY_NAME_MAPPINGS, **_NATIVE_DISPLAY}
 except Exception as e:
-    logging.warning(f"[BSAI VDN-H3] 原生Loader加载失败: {e}")
+    logging.warning(f"[BSAI VDN-H3] Native Loader load failed: {e}")
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

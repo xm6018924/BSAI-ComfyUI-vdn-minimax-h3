@@ -36,18 +36,18 @@ def _auto_install_vdn_h3():
         return True
     try:
         import subprocess
-        _log.info("[BSAI VDN] 内嵌 vdn_h3 缺失且未安装 ComfyUI-VDN-H3，正在自动安装...")
+        _log.info("[BSAI VDN] Embedded vdn_h3 missing and ComfyUI-VDN-H3 not installed, auto-installing...")
         proc = subprocess.run(
             ["git", "clone", "--depth", "1",
              "https://github.com/OpenVDN/ComfyUI-VDN-H3", _VDN_PLUGIN],
             capture_output=True, text=True, timeout=300,
         )
         if proc.returncode == 0 and os.path.isdir(_VDN_PLUGIN):
-            _log.info("[BSAI VDN] ComfyUI-VDN-H3 自动安装成功")
+            _log.info("[BSAI VDN] ComfyUI-VDN-H3 auto-install succeeded")
             return True
-        _log.warning(f"[BSAI VDN] ComfyUI-VDN-H3 自动安装失败: {(proc.stderr or '')[:400]}")
+        _log.warning(f"[BSAI VDN] ComfyUI-VDN-H3 auto-install failed: {(proc.stderr or '')[:400]}")
     except Exception as e:
-        _log.warning(f"[BSAI VDN] ComfyUI-VDN-H3 自动安装异常: {e}")
+        _log.warning(f"[BSAI VDN] ComfyUI-VDN-H3 auto-install error: {e}")
     return False
 
 
@@ -69,7 +69,7 @@ try:
     from vdn_h3.nodes import _apply_vdn, _disable_comfy_compiler_on_broken_builds
     _VDN_NATIVE_AVAILABLE = True
 except Exception as e:
-    _log.warning(f"[BSAI VDN] 原生 vdn_h3 包不可用: {e}")
+    _log.warning(f"[BSAI VDN] Native vdn_h3 package unavailable: {e}")
     _VDN_NATIVE_AVAILABLE = False
 
 
@@ -162,8 +162,8 @@ def _detect_malformed_stages():
             if _dir_contains_valid_stage(d):
                 continue
             hints.append(
-                f"<⚠ {name} 目录存在但结构不完整：需放置 {name}/linear_branch/model.safetensors "
-                f"（官方结构，参见 README）>"
+                f"<WARN {name} directory exists but is incomplete: place {name}/linear_branch/model.safetensors "
+                f"(official layout, see README)>"
             )
     return hints
 
@@ -210,7 +210,7 @@ def _apply_chunk_ffn(model, chunks=8, seq_threshold=4096):
     dm = m.get_model_object("diffusion_model")
     blocks = getattr(dm, "blocks", None)
     if not blocks or not hasattr(blocks[0], "mlp") or not hasattr(blocks[0].mlp, "fc1"):
-        _log.warning("[BSAI VDN] ChunkFeedForward: 模型不像 H3，跳过")
+        _log.warning("[BSAI VDN] ChunkFeedForward: model does not look like H3, skipping")
         return model
     for idx, block in enumerate(blocks):
         patched = _FFNChunkPatch(chunks, seq_threshold).__get__(block.mlp, block.mlp.__class__)
@@ -249,15 +249,15 @@ class BSAIVDNH3LoaderNative:
                 vdn_names += _detect_malformed_stages()
             except Exception:
                 pass
-            vdn_names = vdn_names or ["<无VDN stage：models/vdn 下未找到含 linear_branch 的 stage 目录>"]
+            vdn_names = vdn_names or ["<No VDN stage: no stage dir with linear_branch found under models/vdn>"]
         else:
-            vdn_names = ["<未安装依赖：请先安装 ComfyUI-VDN-H3 插件>"]
+            vdn_names = ["<Dependency missing: install the ComfyUI-VDN-H3 plugin first>"]
 
         return {"required": {
-            "unet_name": (h3_names or ["<无H3模型>"], {
-                "tooltip": "H3 主模型（diffusion_models 目录）"}),
-            "vdn_checkpoint": (vdn_names or ["<无VDN stage>"], {
-                "tooltip": "VDN stage 目录（models/vdn）"}),
+            "unet_name": (h3_names or ["<No H3 model>"], {
+                "tooltip": "H3 backbone model (diffusion_models folder)"}),
+            "vdn_checkpoint": (vdn_names or ["<No VDN stage>"], {
+                "tooltip": "VDN stage directory (models/vdn)"}),
             "apply_turbo_adapter": ("BOOLEAN", {"default": True}),
             "stage_b_strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.05}),
             "turbo_strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.05}),
@@ -272,7 +272,7 @@ class BSAIVDNH3LoaderNative:
             "text_state": ("BOOLEAN", {"default": True}),
             "linear_branch": ("BOOLEAN", {"default": True}),
             "fast_kernels": ("BOOLEAN", {"default": True}),
-            "chunk_ffn": ("BOOLEAN", {"default": True, "tooltip": "启用 ChunkFeedForward 分块前馈加速"}),
+            "chunk_ffn": ("BOOLEAN", {"default": True, "tooltip": "Enable ChunkFeedForward block-wise FFN acceleration"}),
             "chunks": ("INT", {"default": 8, "min": 1, "max": 64}),
             "seq_threshold": ("INT", {"default": 4096, "min": 256, "max": 262144, "step": 256}),
         }}
@@ -289,26 +289,26 @@ class BSAIVDNH3LoaderNative:
 
         if not _VDN_NATIVE_AVAILABLE:
             raise RuntimeError(
-                "BSAI VDN-H3 Loader 需要 ComfyUI-VDN-H3 插件（vdn_h3 包）。"
-                "请先安装 custom_nodes/ComfyUI-VDN-H3（git clone "
-                "https://github.com/OpenVDN/ComfyUI-VDN-H3），"
-                "再重启 ComfyUI。模型目录有文件但下拉框显示不了，多半是此依赖缺失。")
+                "BSAI VDN-H3 Loader requires the ComfyUI-VDN-H3 plugin (vdn_h3 package). "
+                "Install custom_nodes/ComfyUI-VDN-H3 first (git clone "
+                "https://github.com/OpenVDN/ComfyUI-VDN-H3), "
+                "then restart ComfyUI. If files exist but the dropdown is empty, this dependency is likely missing.")
 
         if str(vdn_checkpoint).startswith("<"):
             raise RuntimeError(
-                f"请先修复 VDN 模型问题后再运行：{vdn_checkpoint}\n"
-                "正确结构：ComfyUI/models/vdn/<stage名>/linear_branch/model.safetensors（或 "
-                "model_int8_convrot_comfyui.safetensors）。")
+                f"Fix the VDN model issue before running: {vdn_checkpoint}\n"
+                "Correct layout: ComfyUI/models/vdn/<stage>/linear_branch/model.safetensors (or "
+                "model_int8_convrot_comfyui.safetensors).")
 
         # 1. 加载 H3 主模型（必须传完整路径，load_diffusion_model不做路径解析）
-        _log.info(f"[BSAI VDN] 加载主模型: {unet_name}")
+        _log.info(f"[BSAI VDN] Loading backbone: {unet_name}")
         unet_path = folder_paths.get_full_path("diffusion_models", unet_name)
         if unet_path is None:
-            raise RuntimeError(f"模型文件不存在: {unet_name} (diffusion_models目录)")
+            raise RuntimeError(f"Model file not found: {unet_name} (diffusion_models folder)")
         model = comfy.sd.load_diffusion_model(unet_path)
 
         # 2. 应用原生 VDN-H3
-        _log.info(f"[BSAI VDN] 应用 VDN stage: {vdn_checkpoint}")
+        _log.info(f"[BSAI VDN] Applying VDN stage: {vdn_checkpoint}")
         strength = {"default": stage_b_strength, "turbo": turbo_strength}
         cfg_overrides = {
             "radius": window_radius,
@@ -328,7 +328,7 @@ class BSAIVDNH3LoaderNative:
 
         # 3. 可选 ChunkFeedForward
         if chunk_ffn and chunks > 1:
-            _log.info(f"[BSAI VDN] 应用 ChunkFeedForward: chunks={chunks}, threshold={seq_threshold}")
+            _log.info(f"[BSAI VDN] Applying ChunkFeedForward: chunks={chunks}, threshold={seq_threshold}")
             model = _apply_chunk_ffn(model, chunks, seq_threshold)
 
         return (model,)
@@ -339,5 +339,5 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "BSAIVDNH3LoaderNative": "BSAI VDN-H3 Loader · 权重加载（基座+线性分支)",
+    "BSAIVDNH3LoaderNative": "BSAI VDN-H3 Loader · Weight Load (backbone + linear branch)",
 }

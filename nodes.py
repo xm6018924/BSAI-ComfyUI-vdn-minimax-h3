@@ -49,7 +49,7 @@ try:
         hardware=["cuda"],
     )
 except Exception as _bsai_e:  # 注册失败不得拖垮插件
-    print(f"[BSAI SDK] BSAI-vdn-minimax-h3 注册失败(忽略): {_bsai_e}")
+    print(f"[BSAI SDK] BSAI-vdn-minimax-h3 registration failed (ignored): {_bsai_e}")
 # ==== BSAI SDK 块结束 ====
 
 # ---------------------------------------------------------------------------
@@ -80,34 +80,34 @@ def _vdn_roots():
 # ---------------------------------------------------------------------------
 
 def _env_report():
-    lines = ["[BSAI VDN-H3] 环境检测"]
+    lines = ["[BSAI VDN-H3] Environment check"]
     lines.append(f"  torch            : {torch.__version__}")
     try:
         from torch.nn.attention.flex_attention import create_block_mask  # noqa: F401
-        lines.append("  flex_attention  : 可用")
+        lines.append("  flex_attention  : available")
     except Exception as e:
-        lines.append(f"  flex_attention  : 不可用 ({e})")
+        lines.append(f"  flex_attention  : not available ({e})")
     try:
         import flash_attn  # noqa: F401
-        lines.append("  flash_attn      : 可用")
+        lines.append("  flash_attn      : available")
     except Exception:
-        lines.append("  flash_attn      : 未安装（线性分支原生内核不可用，自动降级 Dense+VSA）")
+        lines.append("  flash_attn      : not installed (native linear-branch kernel unavailable, falling back to Dense+VSA)")
     try:
         import comfy_kitchen  # noqa: F401
-        lines.append("  comfy_kitchen   : 可用（sol_attn 稀疏内核）")
+        lines.append("  comfy_kitchen   : available (sol_attn sparse kernel)")
     except Exception:
-        lines.append("  comfy_kitchen   : 未安装")
+        lines.append("  comfy_kitchen   : not installed")
     try:
         import cv2  # noqa: F401
-        lines.append("  opencv          : 可用（人脸/去油处理）")
+        lines.append("  opencv          : available (face/oil-sheen processing)")
     except Exception:
-        lines.append("  opencv          : 未安装")
+        lines.append("  opencv          : not installed")
     # VDN linear_branch 状态
     if _linear_native_ok():
-        lines.append("  linear_branch   : ✅ 原生FA4可用（混合线性注意力全速运行）")
+        lines.append("  linear_branch   : OK native FA4 (hybrid linear attention at full speed)")
     else:
-        lines.append("  linear_branch   : ⚠️ 原生FA4不可用（需PyTorch2.13+/FA4），启用软件回退模式")
-        lines.append("                    软件回退：短卷积+门控混合注意力（画质接近原生，速度略慢）")
+        lines.append("  linear_branch   : WARN native FA4 unavailable (needs PyTorch 2.13+/FA4), software fallback enabled")
+        lines.append("                    Software fallback: short-conv + gated hybrid attention (quality near-native, slightly slower)")
     return "\n".join(lines)
 
 
@@ -240,7 +240,7 @@ def _vdn_lora_to_comfy(state):
                 # wa @ wb: [rank, in] @ [in, out] -> [rank, out]
                 delta = torch.matmul(wa.float(), wb.float()).to(wa.dtype)
             else:
-                logging.warning(f"[BSAI VDN-H3] LoRA维度不匹配，跳过: {base} wa={tuple(wa.shape)} wb={tuple(wb.shape)}")
+                logging.warning(f"[BSAI VDN-H3] LoRA dimension mismatch, skipping: {base} wa={tuple(wa.shape)} wb={tuple(wb.shape)}")
                 del wa, wb
                 continue
         else:
@@ -249,7 +249,7 @@ def _vdn_lora_to_comfy(state):
                 wb = wb.contiguous().cpu()
                 delta = (wa.float() * wb.float()).to(wa.dtype)
             except Exception as e:
-                logging.warning(f"[BSAI VDN-H3] LoRA元素乘法失败，跳过: {base} {e}")
+                logging.warning(f"[BSAI VDN-H3] LoRA elementwise multiply failed, skipping: {base} {e}")
                 del wa, wb
                 continue
         del wa, wb
@@ -417,8 +417,8 @@ def _load_diffusers_lora_into_model(model, lora_path, strength=1.0):
         torch.cuda.empty_cache()
     if not converted:
         raise RuntimeError(
-            f"[BSAI VDN-H3] 无法从 {lora_path} 解析 LoRA keys（未知格式）。"
-            "请改用 ComfyUI 标准 LoRA（models/loras）。")
+            f"[BSAI VDN-H3] Cannot parse LoRA keys from {lora_path} (unknown format). "
+            "Please use a ComfyUI standard LoRA (models/loras).")
     model, _ = comfy.sd.load_lora_for_models(model, None, converted, strength, 0.0)
     # v1.5: pruned 基座 adaln 结构性不匹配处理。
     # pruned 模型 adaln_proj.linear.weight = [96768, 8]（时间嵌入被剪到 8 维），
@@ -430,8 +430,8 @@ def _load_diffusers_lora_into_model(model, lora_path, strength=1.0):
         for _k in _rm_adaln:
             del model.patches[_k]
         if _rm_adaln:
-            print(f"[BSAI VDN-H3] pruned 基座 adaln 结构性不匹配, 剔除 {len(_rm_adaln)} 个 adaln patch "
-                  f"(turbo 按未剪枝模型训练 [*,2688] vs pruned [*,8]; attn/mlp 调制仍完整生效)", flush=True)
+            print(f"[BSAI VDN-H3] Pruned backbone adaln structural mismatch, removing {len(_rm_adaln)} adaln patches "
+                  f"(turbo trained on unpruned [*,2688] vs pruned [*,8]; attn/mlp modulation still active)", flush=True)
     except Exception:
         pass
     # 加载后立即释放
@@ -458,7 +458,7 @@ def _merge_h3_base_transformer(transformer_dir, out_path, report=print):
     """
     index_path = os.path.join(transformer_dir, "diffusion_pytorch_model.safetensors.index.json")
     if not os.path.isfile(index_path):
-        raise RuntimeError(f"缺少分片索引: {index_path}")
+        raise RuntimeError(f"Missing shard index: {index_path}")
     weight_map = json.load(open(index_path, encoding="utf-8"))["weight_map"]
     files = {}
     for k, fn in weight_map.items():
@@ -468,7 +468,7 @@ def _merge_h3_base_transformer(transformer_dir, out_path, report=print):
     for fn, keys in files.items():
         sp = os.path.join(transformer_dir, fn)
         if not os.path.isfile(sp):
-            raise RuntimeError(f"缺少分片: {sp}")
+            raise RuntimeError(f"Missing shard: {sp}")
         with open(sp, "rb") as f:
             header_len = struct.unpack("<Q", f.read(8))[0]
             header = json.loads(f.read(header_len))
@@ -487,7 +487,7 @@ def _merge_h3_base_transformer(transformer_dir, out_path, report=print):
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     header_bytes = json.dumps(new_header, separators=(",", ":")).encode()
-    report(f"[BSAI VDN-H3] 合并 {len(order)} keys → {out_path} (总量 {cursor/2**30:.1f} GB) ...")
+    report(f"[BSAI VDN-H3] Merging {len(order)} keys -> {out_path} (total {cursor/2**30:.1f} GB) ...")
     t0 = time.time()
     with open(out_path, "wb") as out:
         out.write(struct.pack("<Q", len(header_bytes)))
@@ -498,8 +498,8 @@ def _merge_h3_base_transformer(transformer_dir, out_path, report=print):
                 f.seek(abs_off)
                 out.write(f.read(length))
             if (i + 1) % 100 == 0:
-                report(f"[BSAI VDN-H3]   合并进度 {i+1}/{len(order)} keys")
-    report(f"[BSAI VDN-H3] 合并完成，耗时 {time.time()-t0:.1f}s")
+                report(f"[BSAI VDN-H3]   Merge progress {i+1}/{len(order)} keys")
+    report(f"[BSAI VDN-H3] Merge done, took {time.time()-t0:.1f}s")
     return out_path
 
 
@@ -528,16 +528,16 @@ def _resolve_backbone_path(backbone, model_options, info):
             if p and _looks_like_comfy_h3(p):
                 hits.append(n)
         if not hits:
-            raise RuntimeError("未找到 ComfyUI 兼容的 H3 基座（需含 video_patch_proj/audio_patch_proj 检测点）。"
-                               "请把 ComfyUI 格式的 MiniMax H3 bf16/fp16 权重放入 models/diffusion_models。")
+            raise RuntimeError("No ComfyUI-compatible H3 backbone found (must contain video_patch_proj/audio_patch_proj markers). "
+                               "Please place ComfyUI-format MiniMax H3 bf16/fp16 weights in models/diffusion_models.")
         # 优先全精度（bf16/fp16），其次按体积大者（越接近官方 33B 越好）
         def _prio(n):
             fp = _fp.get_full_path("diffusion_models", n)
             full = ("bf16" in n.lower()) or ("fp16" in n.lower()) or ("fp8" not in n.lower())
             return (not full, -(os.path.getsize(fp) if fp else 0))
         pick = sorted(hits, key=_prio)[0]
-        info.append(f"[BSAI VDN-H3] 🔄 自动选用 ComfyUI 兼容 H3 基座: {pick}（官方 h3-base 分片为 "
-                    "diffusers 布局，ComfyUI 无法加载；如需官方权重请用 diffusers 侧工具转换）")
+        info.append(f"[BSAI VDN-H3] Auto-selected ComfyUI-compatible H3 backbone: {pick} (official h3-base shards use "
+                    "diffusers layout which ComfyUI cannot load; use diffusers-side tools for official weights)")
         return _fp.get_full_path("diffusion_models", pick), None
     return _fp.get_full_path_or_raise("diffusion_models", backbone), None
 
@@ -553,7 +553,7 @@ def _merge_linear_branch(model, stage_dir, enabled=True, software_fallback=True)
         return model
     lb_path = os.path.join(stage_dir, "linear_branch", "model.safetensors")
     if not os.path.isfile(lb_path):
-        print(f"[BSAI VDN-H3] 未找到 linear_branch（{lb_path}），跳过线性分支合并。", flush=True)
+        print(f"[BSAI VDN-H3] linear_branch not found ({lb_path}), skipping linear branch merge.", flush=True)
         return model
 
     # v1.3 修复（崩溃根因）:
@@ -580,7 +580,7 @@ def _merge_linear_branch(model, stage_dir, enabled=True, software_fallback=True)
                 _cp.weight = _cp_backup[0]
                 if _cp_backup[1] is not None:
                     _cp.bias = _cp_backup[1]
-                print("[BSAI VDN-H3] 已恢复 condition_proj 权重（防 ComfyUI load_state_dict 置空）", flush=True)
+                print("[BSAI VDN-H3] condition_proj weights restored (guard against ComfyUI load_state_dict nulling)", flush=True)
         except Exception:
             pass
         return model
@@ -589,7 +589,7 @@ def _merge_linear_branch(model, stage_dir, enabled=True, software_fallback=True)
 
     if native_ok:
         # 原生模式：直接加载权重（FA4 模型结构含 transformer_blocks，键匹配才有效）
-        print(f"[BSAI VDN-H3] 合并 linear_branch (原生FA4模式): {lb_path}", flush=True)
+        print(f"[BSAI VDN-H3] Merging linear_branch (native FA4 mode): {lb_path}", flush=True)
         sd = comfy.utils.load_torch_file(lb_path, safe_load=True)
         dm = model.get_model_object("diffusion_model")
         # v1.6: 键布局预检查。linear_branch 为 VDN diffusers 布局(transformer_blocks.*)，
@@ -600,32 +600,32 @@ def _merge_linear_branch(model, stage_dir, enabled=True, software_fallback=True)
         try:
             _lb_top = set(k.split(".")[0] for k in sd.keys())
             _dm_top = set(dm._modules.keys())
-            print(f"[BSAI VDN-H3] linear_branch 顶层={sorted(_lb_top)} | "
-                  f"基座顶层={sorted(_dm_top)} | 交集={sorted(_lb_top & _dm_top)}", flush=True)
+            print(f"[BSAI VDN-H3] linear_branch top={sorted(_lb_top)} | "
+                  f"backbone top={sorted(_dm_top)} | intersection={sorted(_lb_top & _dm_top)}", flush=True)
             if not _lb_top.issubset(_dm_top):
-                print("[BSAI VDN-H3] 键布局不匹配: 原生FA4 load_state_dict 将清空量化权重且无增强, "
-                      "转为软件回退注入", flush=True)
+                print("[BSAI VDN-H3] Key layout mismatch: native FA4 load_state_dict would null quantized weights "
+                      "with no benefit; switching to software fallback injection", flush=True)
                 model = _inject_software_linear_attention(model, sd)
                 model = _restore_condition_proj(model)
                 return model
         except Exception as _e:
-            print(f"[BSAI VDN-H3] 键布局预检查异常({_e}), 继续原生加载", flush=True)
+            print(f"[BSAI VDN-H3] Key layout precheck error ({_e}), continuing with native load", flush=True)
         try:
             m, u = dm.load_state_dict(sd, strict=False)
-            print(f"[BSAI VDN-H3] linear_branch 合并完成  missing={len(m)} unexpected={len(u)}", flush=True)
+            print(f"[BSAI VDN-H3] linear_branch merge done  missing={len(m)} unexpected={len(u)}", flush=True)
         except Exception as e:
-            print(f"[BSAI VDN-H3] linear_branch 合并失败（不影响基座）: {e}", flush=True)
+            print(f"[BSAI VDN-H3] linear_branch merge failed (backbone unaffected): {e}", flush=True)
         model = _restore_condition_proj(model)
         return model
 
     if not software_fallback:
-        print("[BSAI VDN-H3] 线性分支原生内核不可用（需 PyTorch 2.13+/FA4），"
-              "且软件回退已禁用，跳过 linear_branch。", flush=True)
+        print("[BSAI VDN-H3] Linear branch native kernel unavailable (needs PyTorch 2.13+/FA4), "
+              "and software fallback disabled; skipping linear_branch.", flush=True)
         return model
 
     # 软件回退模式：加载权重 + 通过 model_patching 注入简化混合注意力
-    print(f"[BSAI VDN-H3] 合并 linear_branch (软件回退模式): {lb_path}", flush=True)
-    print("[BSAI VDN-H3] 软件回退：短卷积局部特征 + Softmax 门控混合注意力", flush=True)
+    print(f"[BSAI VDN-H3] Merging linear_branch (software fallback mode): {lb_path}", flush=True)
+    print("[BSAI VDN-H3] Software fallback: short-conv local features + Softmax gated hybrid attention", flush=True)
     sd = comfy.utils.load_torch_file(lb_path, safe_load=True)
 
     # 提取关键权重用于软件回退
@@ -635,7 +635,7 @@ def _merge_linear_branch(model, stage_dir, enabled=True, software_fallback=True)
     out_linear_keys = [k for k in sd.keys() if "to_out_linear" in k]
     alpha_keys = [k for k in sd.keys() if "linear_attention.alpha" in k]
 
-    print(f"[BSAI VDN-H3] linear_branch 权重统计: short_conv={len(short_conv_keys)}, "
+    print(f"[BSAI VDN-H3] linear_branch weight stats: short_conv={len(short_conv_keys)}, "
           f"gate={len(gate_keys)}, out_linear={len(out_linear_keys)}, alpha={len(alpha_keys)}", flush=True)
 
     # v1.3: 不再对 diffusion_model 调 load_state_dict —— linear_branch 键全部为
@@ -685,11 +685,11 @@ def _inject_software_linear_attention(model, lb_sd):
                 block_gates[block_idx] = {}
             block_gates[block_idx][gate_name] = weight
 
-    print(f"[BSAI VDN-H3] 软件回退: 解析到 {len(block_convs)} 个block的短卷积, "
-          f"{len(block_gates)} 个block的门控", flush=True)
+    print(f"[BSAI VDN-H3] Software fallback: parsed {len(block_convs)} blocks short-conv, "
+          f"{len(block_gates)} blocks gate", flush=True)
 
     if not block_convs:
-        print("[BSAI VDN-H3] 软件回退: 未找到短卷积权重，跳过注入", flush=True)
+        print("[BSAI VDN-H3] Software fallback: no short-conv weights found, skipping injection", flush=True)
         return model
 
     # 计算平均门控值（用于控制混合强度）
@@ -702,7 +702,7 @@ def _inject_software_linear_attention(model, lb_sd):
             gate_count += 1
     if gate_count > 0:
         avg_gate = max(0.1, min(0.9, avg_gate / (gate_count + 1)))
-    print(f"[BSAI VDN-H3] 软件回退: 门控混合强度={avg_gate:.3f}", flush=True)
+    print(f"[BSAI VDN-H3] Software fallback: gate mix strength={avg_gate:.3f}", flush=True)
 
     # 通过 model_options 注入注意力补丁
     # 注意：这里使用 ComfyUI 的 model_patching 机制，在注意力计算后注入短卷积增强
@@ -739,7 +739,7 @@ def _inject_software_linear_attention(model, lb_sd):
     model.set_model_attn1_patch(_attention_patch)
     model.set_model_attn1_output_patch(_output_patch)
 
-    print(f"[BSAI VDN-H3] 软件回退: 已注入短卷积增强注意力补丁 (混合强度={avg_gate:.3f})", flush=True)
+    print(f"[BSAI VDN-H3] Software fallback: short-conv attention patch injected (mix={avg_gate:.3f})", flush=True)
     return model
 
 # ---------------------------------------------------------------------------
@@ -755,47 +755,47 @@ class BSAIVDNH3Loader:
             for name in sorted(os.listdir(r)):
                 if os.path.isdir(os.path.join(r, name)) and ("stage" in name or "h3-base" in name):
                     stages.append(name)
-        stages = list(dict.fromkeys(stages)) or ["stage-dmd-step-250", "stage-b-step-2000", "无(仅基座)"]
+        stages = list(dict.fromkeys(stages)) or ["stage-dmd-step-250", "stage-b-step-2000", "(base only)"]
         models = folder_paths.get_filename_list("diffusion_models")
-        vdn_base_opt = ["🔄 VDN h3-base (diffusers分片,自动合并)"]
+        vdn_base_opt = ["🔄 VDN h3-base (diffusers shards, auto-merge)"]
         return {"required": {
             "backbone": (vdn_base_opt + sorted(models), {
-                "tooltip": "基座 transformer 权重。🔄 选项=自动选用 models/diffusion_models 中 ComfyUI 兼容的 "
-                           "MiniMax H3 bf16/fp16 基座（官方 VDN h3-base 分片为 diffusers 布局，ComfyUI 无法直接加载）；"
-                           "其余为 diffusion_models 单文件（如 FastH3 4步蒸馏 / 10Eros bf16）。"}),
+                "tooltip": "Backbone transformer weights. The auto option picks a ComfyUI-compatible "
+                           "MiniMax H3 bf16/fp16 backbone from models/diffusion_models (official VDN h3-base shards use diffusers layout "
+                           "which ComfyUI cannot load directly); other entries are single diffusion_models files (e.g. FastH3 4-step distill / 10Eros bf16)."}),
             "vdn_stage": (stages, {
-                "default": stages[0] if stages and "无" not in stages[0] else "stage-dmd-step-250",
-                "tooltip": "VDN 权重 stage 目录：stage-dmd-step-250=8步turbo（推荐），"
-                           "stage-b-step-2000=50步质量。目录放 ComfyUI/models/vdn/ 下。"}),
+                "default": stages[0] if stages and "(base only)" not in stages[0] else "stage-dmd-step-250",
+                "tooltip": "VDN weight stage directory: stage-dmd-step-250 = 8-step turbo (recommended), "
+                           "stage-b-step-2000 = 50-step quality. Place under ComfyUI/models/vdn/."}),
             "merge_linear_branch": ("BOOLEAN", {
                 "default": True,
-                "label_on": "合并线性分支",
-                "label_off": "仅基座",
-                "tooltip": "合并 VDN linear_branch 混合注意力分支（需 FA4，无则自动软件回退）。"}),
+                "label_on": "Merge linear branch",
+                "label_off": "Backbone only",
+                "tooltip": "Merge the VDN linear_branch hybrid-attention branch (needs FA4; software fallback if unavailable)."}),
             "software_fallback": ("BOOLEAN", {
                 "default": True,
-                "label_on": "软件回退",
-                "label_off": "禁用",
-                "tooltip": "无 FA4 时启用软件回退模式（短卷积+门控混合注意力），画质接近原生。"}),
-            "quality_mode": (["⚡ 速度优先 (8步+turbo)", "🎨 画质优先 (16步+双LoRA)", "💎 VDN纯质 (linear_branch+无LoRA)"], {
-                "default": "🎨 画质优先 (16步+双LoRA)",
-                "tooltip": "画质模式：\n"
-                           "⚡ 速度优先：8步采样+turbo LoRA，最快但画质一般\n"
-                           "🎨 画质优先：16步采样+弱turbo+default，画质显著提升（推荐）\n"
-                           "💎 VDN纯质：依赖linear_branch混合注意力，8步+无LoRA，近无损画质（需FA4或软件回退）"}),
+                "label_on": "SW fallback",
+                "label_off": "Disabled",
+                "tooltip": "When FA4 is unavailable, enable software fallback (short-conv + gated hybrid attention), quality near-native."}),
+            "quality_mode": (["⚡ Speed (8 steps + turbo)", "🎨 Quality (16 steps + dual LoRA)", "💎 VDN Pure (linear_branch, no LoRA)"], {
+                "default": "🎨 Quality (16 steps + dual LoRA)",
+                "tooltip": "Quality mode:\n"
+                           "Speed: 8-step sampling + turbo LoRA, fastest but moderate quality\n"
+                           "Quality: 16-step + weak turbo + default, significantly better (recommended)\n"
+                           "VDN Pure: relies on linear_branch hybrid attention, 8-step + no LoRA, near-lossless (needs FA4 or software fallback)"}),
             "merge_default_lora": ("BOOLEAN", {
                 "default": False,
-                "label_on": "合并 default LoRA",
-                "label_off": "不合并",
-                "tooltip": "合并 stage/adapters/default 的 50 步质量 LoRA。"}),
+                "label_on": "Merge default LoRA",
+                "label_off": "Off",
+                "tooltip": "Merge the 50-step quality LoRA from stage/adapters/default."}),
             "merge_turbo_lora": ("BOOLEAN", {
                 "default": True,
-                "label_on": "合并 turbo LoRA",
-                "label_off": "不合并",
-                "tooltip": "合并 stage/adapters/turbo 的 8 步 DMD2 蒸馏 LoRA（速度+去伪影核心）。"}),
+                "label_on": "Merge turbo LoRA",
+                "label_off": "Off",
+                "tooltip": "Merge the 8-step DMD2 distill LoRA from stage/adapters/turbo (speed + anti-artifact core)."}),
             "lora_strength": ("FLOAT", {
                 "default": 1.0, "min": 0.0, "max": 2.0, "step": 0.05,
-                "tooltip": "LoRA 合并强度。"}),
+                "tooltip": "LoRA merge strength."}),
             "weight_dtype": (["default", "fp8_e4m3fn", "fp8_e4m3fn_fast", "fp8_e5m2"], {
                 "default": "default", "advanced": True}),
         }}
@@ -804,38 +804,38 @@ class BSAIVDNH3Loader:
     RETURN_NAMES = ("MODEL", "info", "stage_dir")
     FUNCTION = "load_model"
     CATEGORY = "BSAI/VDN-H3"
-    DESCRIPTION = ("加载 VDN-H3：基座 MiniMax H3 + VDN stage（linear_branch 混合注意力分支 "
-                   "+ default/turbo LoRA）。stage 目录放 ComfyUI/models/vdn/，权重结构见 README。")
+    DESCRIPTION = ("Load VDN-H3: MiniMax H3 backbone + VDN stage (linear_branch hybrid-attention branch "
+                   "+ default/turbo LoRA). Place stage directories under ComfyUI/models/vdn/; see README for layout.")
 
     def load_model(self, backbone, vdn_stage, merge_linear_branch=True,
                    software_fallback=True,
-                   quality_mode="🎨 画质优先 (16步+双LoRA)",
+                   quality_mode="🎨 Quality (16 steps + dual LoRA)",
                    merge_default_lora=False, merge_turbo_lora=True,
                    lora_strength=1.0, weight_dtype="default"):
         info = [_env_report()]
 
         # 根据画质模式自动调整参数
-        if "速度优先" in quality_mode:
+        if "Speed" in quality_mode:
             mode_turbo = True
             mode_default = False
             mode_turbo_strength = 1.0
             mode_default_strength = 0.0
             mode_steps = 8
-            info.append("[BSAI VDN-H3] 画质模式: ⚡ 速度优先 (8步+turbo LoRA)")
-        elif "VDN纯质" in quality_mode:
+            info.append("[BSAI VDN-H3] Quality mode: Speed (8 steps + turbo LoRA)")
+        elif "VDN Pure" in quality_mode:
             mode_turbo = False
             mode_default = False
             mode_turbo_strength = 0.0
             mode_default_strength = 0.0
             mode_steps = 8
-            info.append("[BSAI VDN-H3] 画质模式: 💎 VDN纯质 (8步+无LoRA，依赖linear_branch)")
+            info.append("[BSAI VDN-H3] Quality mode: VDN Pure (8 steps + no LoRA, relies on linear_branch)")
         else:  # 画质优先
             mode_turbo = True
             mode_default = True
             mode_turbo_strength = 0.6
             mode_default_strength = 0.5
             mode_steps = 16
-            info.append("[BSAI VDN-H3] 画质模式: 🎨 画质优先 (16步+弱turbo+default)")
+            info.append("[BSAI VDN-H3] Quality mode: Quality (16 steps + weak turbo + default)")
 
         # 用户手动设置的优先级高于画质模式
         use_turbo = merge_turbo_lora and mode_turbo
@@ -870,43 +870,43 @@ class BSAIVDNH3Loader:
             if _sz >= 1.0:
                 model = _m
                 break
-            info.append(f"[BSAI VDN-H3] 基座参数异常({_sz:.1f}GB)，清除模型缓存重载(第{_attempt + 1}次)")
+            info.append(f"[BSAI VDN-H3] Backbone params abnormal ({_sz:.1f}GB), clearing model cache and reloading (attempt {_attempt + 1})")
             del _m
             import gc as _gc
             _gc.collect()
             comfy.model_management.unload_all_models()
             torch.cuda.empty_cache()
         if model is None:
-            raise RuntimeError(f"[BSAI VDN-H3] 基座 {os.path.basename(path)} 加载后参数为空（重试3次仍失败）。")
-        info.append(f"[BSAI VDN-H3] 基座已加载: {os.path.basename(path)} ({_sz:.1f}GB) | weight_dtype={weight_dtype}")
+            raise RuntimeError(f"[BSAI VDN-H3] Backbone {os.path.basename(path)} has empty params after load (3 retries failed).")
+        info.append(f"[BSAI VDN-H3] Backbone loaded: {os.path.basename(path)} ({_sz:.1f}GB) | weight_dtype={weight_dtype}")
 
         # 定位 stage 目录
         stage_dir = ""
-        if vdn_stage and "无" not in vdn_stage:
+        if vdn_stage and "(base only)" not in vdn_stage:
             for r in _vdn_roots():
                 cand = os.path.join(r, vdn_stage)
                 if os.path.isdir(cand):
                     stage_dir = cand
                     break
             if not stage_dir:
-                info.append(f"[BSAI VDN-H3] 未找到 stage 目录 {vdn_stage}（models/vdn 下），跳过 LoRA/线性分支。")
+                info.append(f"[BSAI VDN-H3] Stage dir {vdn_stage} not found (under models/vdn), skipping LoRA/linear branch.")
             else:
-                info.append(f"[BSAI VDN-H3] stage 目录: {stage_dir}")
+                info.append(f"[BSAI VDN-H3] Stage dir: {stage_dir}")
                 model = _merge_linear_branch(model, stage_dir, merge_linear_branch, software_fallback)
                 if use_turbo:
                     lp = os.path.join(stage_dir, "adapters", "turbo", "adapter_model.safetensors")
                     if os.path.isfile(lp):
                         model = _load_diffusers_lora_into_model(model, lp, turbo_strength)
-                        info.append(f"[BSAI VDN-H3] turbo LoRA 已合并 (强度 {turbo_strength})")
+                        info.append(f"[BSAI VDN-H3] turbo LoRA merged (strength {turbo_strength})")
                     else:
-                        info.append(f"[BSAI VDN-H3] 未找到 turbo LoRA（{lp}）")
+                        info.append(f"[BSAI VDN-H3] turbo LoRA not found ({lp})")
                 if use_default:
                     lp = os.path.join(stage_dir, "adapters", "default", "adapter_model.safetensors")
                     if os.path.isfile(lp):
                         model = _load_diffusers_lora_into_model(model, lp, default_strength)
-                        info.append(f"[BSAI VDN-H3] default LoRA 已合并 (强度 {default_strength})")
+                        info.append(f"[BSAI VDN-H3] default LoRA merged (strength {default_strength})")
                     else:
-                        info.append(f"[BSAI VDN-H3] 未找到 default LoRA（{lp}）")
+                        info.append(f"[BSAI VDN-H3] default LoRA not found ({lp})")
         print("\n".join(info), flush=True)
         return (model, "\n".join(info), stage_dir)
 
@@ -920,15 +920,15 @@ class BSAIVDNH3DualLora:
         loras = folder_paths.get_filename_list("loras")
         return {"required": {
             "model": ("MODEL",),
-            "lora_a": (sorted(loras), {"tooltip": "LoRA A：主 LoRA（如 VDN turbo 8 步蒸馏，速度+去伪影）。"}),
+            "lora_a": (sorted(loras), {"tooltip": "LoRA A: primary LoRA (e.g. VDN turbo 8-step distill, speed + anti-artifact)."}),
             "lora_a_strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.05}),
-            "lora_b": (sorted(loras), {"tooltip": "LoRA B：辅助 LoRA（如 VDN default 50 步质量，补偿细节、抑伪影）。"}),
+            "lora_b": (sorted(loras), {"tooltip": "LoRA B: secondary LoRA (e.g. VDN default 50-step quality, detail compensation, suppress artifacts)."}),
             "lora_b_strength": ("FLOAT", {"default": 0.35, "min": 0.0, "max": 2.0, "step": 0.05,
-                                          "tooltip": "辅助 LoRA 强度建议 0.2-0.5：轻叠加质量细节而不拖慢步数。"}),
+                                          "tooltip": "Recommended secondary LoRA strength 0.2-0.5: lightly add quality detail without slowing steps."}),
             "artifact_suppress": ("FLOAT", {
                 "default": 0.0, "min": 0.0, "max": 1.0, "step": 0.05,
-                "tooltip": "去伪影强度：>0 时对低步数典型伪影（条纹/振铃/结构粘连）做后处理抑制。"
-                           "0=关闭（仅双 LoRA 混合）。"}),
+                "tooltip": "Artifact suppression strength: >0 post-processes typical low-step artifacts (striping/ringing/structural sticking). "
+                           "0 = off (dual LoRA mix only)."}),
         }, "optional": {
             "clip": ("CLIP",),
         }}
@@ -937,9 +937,9 @@ class BSAIVDNH3DualLora:
     RETURN_NAMES = ("MODEL", "info")
     FUNCTION = "apply"
     CATEGORY = "BSAI/VDN-H3"
-    DESCRIPTION = ("双 LoRA 混合加载：VDN 的 default(质量) + turbo(速度) 双 LoRA 同挂，"
-                   "速度步数下补偿细节、抑制蒸馏伪影；可配 artifact_suppress 后处理进一步去伪影。"
-                   "LoRA 文件放 models/loras（ComfyUI 标准格式）。")
+    DESCRIPTION = ("Dual-LoRA mix: attach VDN default (quality) + turbo (speed) together, "
+                   "compensating detail at low step counts and suppressing distillation artifacts; optional artifact_suppress post-processing. "
+                   "Place LoRA files in models/loras (ComfyUI standard format).")
 
     def apply(self, model, lora_a, lora_a_strength, lora_b, lora_b_strength,
               artifact_suppress=0.0, clip=None):
@@ -1004,7 +1004,7 @@ class BSAIVDNH3DualLora:
         if artifact_suppress > 0:
             to = model.model_options.setdefault("transformer_options", {})
             to["bsai_vdn_artifact_suppress"] = float(artifact_suppress)
-            info.append(f"伪影抑制 x{artifact_suppress}")
+            info.append(f"artifact_suppress x{artifact_suppress}")
         msg = "[BSAI VDN-H3 DualLora] " + " | ".join(info)
         print(msg, flush=True)
         return (model, msg)
@@ -1018,27 +1018,27 @@ class BSAIVDNH3Timesteps:
     def INPUT_TYPES(cls):
         return {"required": {
             "model": ("MODEL",),
-            "steps": (["8 步 turbo", "16 步质量", "50 步质量", "自定义"], {
-                "default": "8 步 turbo",
-                "tooltip": "8 步 turbo=DMD2 蒸馏阶梯；16 步质量=密集高精度（画质优先推荐）；50 步质量=均匀高精度；自定义=下方 ladder。"}),
+            "steps": (["8-step turbo", "16-step quality", "50-step quality", "Custom"], {
+                "default": "8-step turbo",
+                "tooltip": "8-step turbo = DMD2 distill ladder; 16-step quality = dense high-precision (recommended for quality); 50-step quality = uniform high-precision; Custom = ladder below."}),
             "ladder": ("STRING", {
                 "default": VDN_DEFAULT_STEPS_8, "multiline": False,
-                "tooltip": "自定义逗号分隔 timestep 阶梯（0-1000），末尾自动补 0。"}),
+                "tooltip": "Custom comma-separated timestep ladder (0-1000); 0 is appended at the end automatically."}),
         }}
 
     RETURN_TYPES = ("SIGMAS",)
     RETURN_NAMES = ("SIGMAS",)
     FUNCTION = "get_sigmas"
     CATEGORY = "BSAI/VDN-H3"
-    DESCRIPTION = ("VDN-H3 时间步：8 步 turbo 用 DMD 蒸馏阶梯（参考 FastH3 [999,750,500,250]），"
-                   "50 步质量用高精度阶梯。输出接入 SamplerCustomAdvanced.sigmas。")
+    DESCRIPTION = ("VDN-H3 timesteps: 8-step turbo uses the DMD distill ladder (cf. FastH3 [999,750,500,250]); "
+                   "50-step quality uses a high-precision ladder. Output feeds SamplerCustomAdvanced.sigmas.")
 
-    def get_sigmas(self, model, steps="8 步 turbo", ladder=VDN_DEFAULT_STEPS_8):
-        if steps == "8 步 turbo":
+    def get_sigmas(self, model, steps="8-step turbo", ladder=VDN_DEFAULT_STEPS_8):
+        if steps == "8-step turbo":
             text = VDN_DEFAULT_STEPS_8
-        elif steps == "16 步质量":
+        elif steps == "16-step quality":
             text = VDN_DEFAULT_STEPS_16
-        elif steps == "50 步质量":
+        elif steps == "50-step quality":
             text = VDN_DEFAULT_STEPS_50
         else:
             text = ladder
@@ -1048,7 +1048,7 @@ class BSAIVDNH3Timesteps:
             if part:
                 values.append(float(part))
         if len(values) < 2:
-            raise ValueError(f"[BSAI VDN-H3] 阶梯至少需要 2 个 timestep: {text!r}")
+            raise ValueError(f"[BSAI VDN-H3] Ladder needs at least 2 timesteps: {text!r}")
         ms = model.get_model_object("model_sampling")
         sig = []
         for t in values:
@@ -1116,9 +1116,9 @@ def _vdn_euler(model, x, sigmas, extra_args=None, callback=None, disable=None,
     try:
         _bsai_alloc = BSAIOrch.allocate("sampling", requester="8191", watchdog=False)
         if not _bsai_alloc.ok:
-            print(f"[BSAI VDN-H3] SDK 未取得 gpu1_sampling 租约({_bsai_alloc.reason})，仍按原逻辑采样", flush=True)
+            print(f"[BSAI VDN-H3] SDK did not acquire gpu1_sampling lease ({_bsai_alloc.reason}), sampling with default logic", flush=True)
     except Exception as _bsai_ae:
-        print(f"[BSAI VDN-H3] SDK allocate 异常(忽略): {_bsai_ae}", flush=True)
+        print(f"[BSAI VDN-H3] SDK allocate error (ignored): {_bsai_ae}", flush=True)
         _bsai_alloc = None
 
     if schedule_mode == "native" or (schedule_mode == "auto" and _native_av_schedule(model)):
@@ -1151,7 +1151,7 @@ def _vdn_euler(model, x, sigmas, extra_args=None, callback=None, disable=None,
                     if shapes and len(shapes) >= 2:
                         v_numel = math.prod(shapes[0][1:])
     if not v_numel:
-        raise RuntimeError("[BSAI VDN-H3] Euler 需要 H3 视频+音频 latent（EmptyMiniMaxH3LatentAV 输出）。")
+        raise RuntimeError("[BSAI VDN-H3] Euler requires H3 video+audio latent (EmptyMiniMaxH3LatentAV output).")
     a_numel = x.shape[-1] - v_numel
     for i in range(len(sigmas) - 1):
         sv, sv_n = float(sigmas[i]), float(sigmas[i + 1])
@@ -1182,19 +1182,19 @@ class BSAIVDNH3EulerSampler:
     def INPUT_TYPES(cls):
         return {"required": {
             "shift_video": ("FLOAT", {"default": VDN_SHIFT_V, "min": 0.01, "max": 100.0, "step": 0.01,
-                                      "tooltip": "视频流 flow shift（VDN 官方 12.0）。"}),
+                                      "tooltip": "Video stream flow shift (VDN official 12.0)."}),
             "shift_audio": ("FLOAT", {"default": VDN_SHIFT_A, "min": 0.01, "max": 100.0, "step": 0.01,
-                                      "tooltip": "音频流 flow shift（VDN 官方 3.0）。"}),
+                                      "tooltip": "Audio stream flow shift (VDN official 3.0)."}),
             "schedule_mode": (["auto", "native", "legacy_dual"], {
                 "default": "auto",
-                "tooltip": "auto: 检测 ModelSamplingAV；native=单调度；legacy_dual=音视频双调度。"}),
+                "tooltip": "auto: detect ModelSamplingAV; native = single schedule; legacy_dual = separate audio/video schedules."}),
         }}
 
     RETURN_TYPES = ("SAMPLER",)
     RETURN_NAMES = ("SAMPLER",)
     FUNCTION = "get_sampler"
     CATEGORY = "BSAI/VDN-H3"
-    DESCRIPTION = "VDN-H3 Euler 采样器，与 VDN 时间步搭配，接入 SamplerCustomAdvanced.sampler。"
+    DESCRIPTION = "VDN-H3 Euler sampler, paired with VDN timesteps; feeds SamplerCustomAdvanced.sampler."
 
     def get_sampler(self, shift_video=VDN_SHIFT_V, shift_audio=VDN_SHIFT_A, schedule_mode="auto"):
         sampler = comfy.samplers.KSAMPLER(
@@ -1215,35 +1215,35 @@ class BSAIVDNH3Accel:
             "model": ("MODEL",),
             "block_cache_enable": ("BOOLEAN", {
                 "default": True,
-                "tooltip": "Block Cache：跨步缓存中间 block 输出，跳过冗余计算（ComfyUI-CacheDiT 内核）。"}),
+                "tooltip": "Block Cache: cache intermediate block outputs at stride to skip redundant compute (ComfyUI-CacheDiT kernel)."}),
             "block_cache_start": ("FLOAT", {"default": 0.10, "min": 0.0, "max": 1.0, "step": 0.01,
-                                            "tooltip": "从该采样进度起启用 block cache（前期保持精确）。"}),
+                                            "tooltip": "Enable block cache from this sampling progress (keep early steps precise)."}),
             "block_cache_end": ("FLOAT", {"default": 0.85, "min": 0.0, "max": 1.0, "step": 0.01,
-                                          "tooltip": "到该进度停用 block cache（收尾保持细节）。"}),
+                                          "tooltip": "Disable block cache at this progress (keep late steps detailed)."}),
             "cachedit_enable": ("BOOLEAN", {
                 "default": True,
-                "tooltip": "CacheDiT 扩散 Transformer 缓存：t 邻域步跳过注意力重算，显著提速。"}),
+                "tooltip": "CacheDiT diffusion-Transformer cache: skip attention recompute within a t-neighborhood, large speedup."}),
             "te_speed_enable": ("BOOLEAN", {
                 "default": True,
-                "tooltip": "TE-Speed：文本编码器快速路径（若有对应补丁节点则启用）。"}),
+                "tooltip": "TE-Speed: text-encoder fast path (enable if the matching patch node is present)."}),
             "vsa_enable": ("BOOLEAN", {
                 "default": True,
-                "tooltip": "VSA 视频稀疏注意力（FastH3 原生稀疏）：保留 top-k 视频块精确注意力。"}),
+                "tooltip": "VSA video sparse attention (FastH3 native sparse): keep top-k video blocks under exact attention."}),
             "vsa_keep_percent": ("FLOAT", {
                 "default": 20.0, "min": 0.5, "max": 100.0, "step": 0.5,
-                "tooltip": "VSA 保留的精确注意力百分比（越大细节越好、越慢）。"}),
+                "tooltip": "Percentage of exact attention VSA keeps (higher = more detail, slower)."}),
             "detail_preserve": ("FLOAT", {
                 "default": 0.0, "min": 0.0, "max": 1.0, "step": 0.05,
-                "tooltip": "细节保护：>0 时对 cache/VSA 造成的细节损失做高频补偿（小成本保纹理）。"}),
+                "tooltip": "Detail preservation: >0 applies high-frequency compensation for cache/VSA detail loss (small cost, keeps texture)."}),
         }}
 
     RETURN_TYPES = ("MODEL", "STRING")
     RETURN_NAMES = ("MODEL", "config_json")
     FUNCTION = "apply"
     CATEGORY = "BSAI/VDN-H3"
-    DESCRIPTION = ("最新加速技术整合开关：Block Cache + CacheDiT + TE-Speed + VSA 稀疏注意力。"
-                   "通过 model_options 注入，各内核可用时自动启用；不可用自动跳过不报错。"
-                   "输出 config_json 供下方 BSAI H3 MotionFix 节点联动。")
+    DESCRIPTION = ("Acceleration suite switches: Block Cache + CacheDiT + TE-Speed + VSA sparse attention. "
+                   "Injected via model_options; each kernel auto-enables when available and skips silently otherwise. "
+                   "Outputs config_json for the downstream BSAI H3 MotionFix node.")
 
     def apply(self, model, block_cache_enable, block_cache_start, block_cache_end,
               cachedit_enable, te_speed_enable, vsa_enable, vsa_keep_percent,
@@ -1267,7 +1267,7 @@ class BSAIVDNH3Accel:
             applied.append("TE-Speed")
         if vsa_enable:
             applied.append(f"VSA({vsa_keep_percent}%)")
-        print(f"[BSAI VDN-H3 Accel] 已注入: {', '.join(applied) or '无'} | "
+        print(f"[BSAI VDN-H3 Accel] Injected: {', '.join(applied) or 'none'} | "
               f"detail_preserve={detail_preserve}", flush=True)
         return (model, str(cfg))
 
@@ -1290,7 +1290,7 @@ def _load_upscale_module():
         sys.modules["_bsai_h3_upscale_4k"] = mod
         spec.loader.exec_module(mod)
     except Exception as e:
-        print(f"[BSAI VDN-H3] 加载 upscale-4K 模块失败: {e}", flush=True)
+        print(f"[BSAI VDN-H3] Failed to load upscale-4K module: {e}", flush=True)
         return None
     return mod
 
@@ -1302,7 +1302,7 @@ class BSAIVDNH3Upscale:
             "images / 图像": ("IMAGE",),
             "scale / 放大倍数": ("FLOAT", {"default": 4.0, "min": 1.0, "max": 8.0, "step": 0.01}),
             "model_name / 模型": ("STRING", {"default": "realesr-general-x4v3.pth",
-                                            "tooltip": "模型文件名（同 BSAI-H3-upscale-4K，如 realesr-general-x4v3.pth）"}),
+                                            "tooltip": "Model filename (same as BSAI-H3-upscale-4K, e.g. realesr-general-x4v3.pth)"}),
             "tile_size / 分块大小": ("INT", {"default": 0, "min": 0, "max": 2048, "step": 16}),
             "tile_pad / 分块重叠": ("INT", {"default": 16, "min": 0, "max": 128, "step": 4}),
             "batch_frames / 批帧数": ("INT", {"default": 4, "min": 1, "max": 128, "step": 1}),
@@ -1316,11 +1316,11 @@ class BSAIVDNH3Upscale:
         }}
 
     RETURN_TYPES = ("IMAGE", "INT", "INT", "FLOAT", "STRING")
-    RETURN_NAMES = ("IMAGE / 图像", "width / 宽", "height / 高", "scale_used / 实际倍率", "info / 信息")
+    RETURN_NAMES = ("IMAGE", "width", "height", "scale_used", "info")
     FUNCTION = "upscale"
     CATEGORY = "BSAI/VDN-H3"
-    DESCRIPTION = ("画质超分放大 + 高清修复：桥接 BSAI-H3-upscale-4K 引擎（Real-ESRGAN/4K/DLSS），"
-                   "支持时序光流稳定 + 细节锐化 + 柔和防振铃。未安装 upscale-4K 时自动降级 Lanczos 放大。")
+    DESCRIPTION = ("Super-resolution + restoration: bridges the BSAI-H3-upscale-4K engine (Real-ESRGAN/4K/DLSS), "
+                   "with temporal optical-flow stabilization + detail sharpening + soft anti-ringing. Falls back to Lanczos upscale when upscale-4K is not installed.")
 
     def upscale(self, **kw):
         g = kw.get
@@ -1368,7 +1368,7 @@ class BSAIVDNH3Upscale:
                 r = node.upscale(**kw2)
                 return (r[0], r[1], r[2], r[3], r[4])
             except Exception as e:
-                print(f"[BSAI VDN-H3] upscale-4K 引擎失败，降级 Lanczos: {e}", flush=True)
+                print(f"[BSAI VDN-H3] upscale-4K engine failed, falling back to Lanczos: {e}", flush=True)
 
         # 降级：Lanczos 双线性放大（保时序）
         b, h, w, c = images.shape
@@ -1376,7 +1376,7 @@ class BSAIVDNH3Upscale:
         imgs = images.permute(0, 3, 1, 2).contiguous()
         out = F.interpolate(imgs, size=(nh, nw), mode="bicubic", align_corners=False)
         out = out.permute(0, 2, 3, 1).contiguous()
-        return (out, nw, nh, scale, "降级: F.interpolate bicubic (未检测到 BSAI-H3-upscale-4K)")
+        return (out, nw, nh, scale, "Fallback: F.interpolate bicubic (BSAI-H3-upscale-4K not detected)")
 
 # ---------------------------------------------------------------------------
 # 7) 远景小脸崩坏修复（桥接 BSAI_H3_FaceRestore）
@@ -1395,11 +1395,11 @@ class BSAIVDNH3FaceRestore:
         }}
 
     RETURN_TYPES = ("IMAGE", "INT", "STRING")
-    RETURN_NAMES = ("IMAGE / 图像", "faces_detected / 检测人脸数", "info / 信息")
+    RETURN_NAMES = ("IMAGE", "faces_detected", "info")
     FUNCTION = "restore"
     CATEGORY = "BSAI/VDN-H3"
-    DESCRIPTION = ("远景小脸崩坏修复：YOLOv8-Face 多尺度检测 + GFPGAN/CodeFormer 重建五官，"
-                   "修复 H3 全景/远景的小脸模糊变形。桥接 BSAI-H3-upscale-4K 的人脸引擎。")
+    DESCRIPTION = ("Distant small-face restoration: YOLOv8-Face multi-scale detection + GFPGAN/CodeFormer facial reconstruction, "
+                   "fixing blurred/deformed small faces in H3 wide shots. Bridges the BSAI-H3-upscale-4K face engine.")
 
     def restore(self, **kw):
         g = kw.get
@@ -1423,9 +1423,9 @@ class BSAIVDNH3FaceRestore:
                 })
                 return (r[0], r[1], r[2])
             except Exception as e:
-                print(f"[BSAI VDN-H3] FaceRestore 引擎失败: {e}", flush=True)
-                return (images, 0, f"引擎失败: {e}")
-        return (images, 0, "未安装 BSAI-H3-upscale-4K")
+                print(f"[BSAI VDN-H3] FaceRestore engine failed: {e}", flush=True)
+                return (images, 0, f"Engine failed: {e}")
+        return (images, 0, "BSAI-H3-upscale-4K not installed")
 
 # ---------------------------------------------------------------------------
 # 8) 脸部去油（高光抑制 + 保边平滑）
@@ -1438,27 +1438,27 @@ class BSAIVDNH3FaceOil:
             "images / 图像": ("IMAGE",),
             "strength / 去油强度": ("FLOAT", {
                 "default": 0.60, "min": 0.0, "max": 1.0, "step": 0.05,
-                "tooltip": "高光抑制强度。0=关闭。0.5-0.7 自然去油，过高会抹平皮肤质感。"}),
+                "tooltip": "Highlight suppression strength. 0 = off. 0.5-0.7 gives natural oil-sheen removal; too high flattens skin texture."}),
             "bright_thr / 高光阈值": ("FLOAT", {
                 "default": 0.78, "min": 0.5, "max": 1.0, "step": 0.01,
-                "tooltip": "亮度高于此值视为高光（油光/过曝区）。"}),
+                "tooltip": "Pixels brighter than this are treated as highlight (oily/overexposed areas)."}),
             "sat_thr / 低饱和阈值": ("FLOAT", {
                 "default": 0.32, "min": 0.0, "max": 1.0, "step": 0.01,
-                "tooltip": "饱和度低于此值且高亮视为油光（纯白高光彩度低）。"}),
+                "tooltip": "Pixels below this saturation that are also bright are treated as oil-sheen (pure white highlights have low chroma)."}),
             "smooth_radius / 平滑半径": ("INT", {
                 "default": 9, "min": 1, "max": 64, "step": 1,
-                "tooltip": "保边平滑半径（越大越柔和，细节损失越多）。"}),
+                "tooltip": "Edge-preserving smooth radius (larger = softer, more detail loss)."}),
             "face_only / 仅脸部": ("BOOLEAN", {
                 "default": False,
-                "tooltip": "True: 用 OpenCV Haar 检测人脸，仅对人脸区域去油；False: 全图高光抑制。"}),
+                "tooltip": "True: use OpenCV Haar face detection and de-oil only face regions; False: suppress highlights across the whole image."}),
         }}
 
     RETURN_TYPES = ("IMAGE", "STRING")
-    RETURN_NAMES = ("IMAGE / 图像", "info / 信息")
+    RETURN_NAMES = ("IMAGE", "info")
     FUNCTION = "apply"
     CATEGORY = "BSAI/VDN-H3"
-    DESCRIPTION = ("脸部去油：检测高亮度+低饱和的油光/高光区域，用保边滤波（bilateral）把高光"
-                   "向邻域肤色收敛，消除油腻反光同时保留皮肤纹理。可选 Haar 人脸限定。")
+    DESCRIPTION = ("Face oil-sheen removal: detect bright + low-saturation oily/highlight regions and use edge-preserving "
+                   "(bilateral-style) smoothing to pull highlights toward neighboring skin tones, removing greasy shine while keeping skin texture. Optional Haar face mask.")
 
     def apply(self, **kw):
         g = kw.get
@@ -1469,7 +1469,7 @@ class BSAIVDNH3FaceOil:
         radius = int(g("smooth_radius / 平滑半径", 9))
         face_only = bool(g("face_only / 仅脸部", False))
         if strength <= 0:
-            return (images, "strength=0 未处理")
+            return (images, "strength=0, no processing")
 
         try:
             import cv2
@@ -1553,22 +1553,22 @@ class BSAIVDNH3EmptyLatentVideo:
     def INPUT_TYPES(cls):
         return {"required": {
             "width": ("INT", {"default": 1344, "min": 256, "max": 4096, "step": 16,
-                                      "tooltip": "输出视频宽度（像素），需为 16 倍数。"}),
+                                      "tooltip": "Output video width (pixels); must be a multiple of 16."}),
             "height": ("INT", {"default": 768, "min": 256, "max": 4096, "step": 16,
-                                       "tooltip": "输出视频高度（像素），需为 16 倍数。"}),
+                                       "tooltip": "Output video height (pixels); must be a multiple of 16."}),
             "length": ("INT", {"default": 124, "min": 1, "max": 1024, "step": 1,
-                                       "tooltip": "输出视频帧数（时间下采样 4 倍，124≈5s@24fps）。"}),
+                                       "tooltip": "Output video frame count (temporal downsample 4x; 124 ~= 5s at 24fps)."}),
             "batch_size": ("INT", {"default": 1, "min": 1, "max": 16,
-                                            "tooltip": "批次大小。"}),
+                                            "tooltip": "Batch size."}),
         }}
 
     RETURN_TYPES = ("LATENT",)
     RETURN_NAMES = ("LATENT",)
     FUNCTION = "generate"
     CATEGORY = "BSAI/VDN-H3"
-    DESCRIPTION = ("H3 视频专用 5D 空 latent：[B, 24, T/4, H/16, W/16]。"
-                   "空间下采样 16×，时间下采样 4×，24 通道视频流。"
-                   "接入 SamplerCustomAdvanced.latent_image。")
+    DESCRIPTION = ("H3 video-specific 5D empty latent: [B, 24, T/4, H/16, W/16]. "
+                   "Spatial downsample 16x, temporal downsample 4x, 24-channel video stream. "
+                   "Feeds SamplerCustomAdvanced.latent_image.")
 
     def generate(self, width, height, length, batch_size=1):
         import torch
@@ -1600,15 +1600,15 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "BSAIVDNH3Loader": "BSAI VDN-H3 Loader · 权重加载（基座+线性分支+LoRA）",
-    "BSAIVDNH3DualLora": "BSAI VDN-H3 Dual LoRA · 双LoRA混合(去伪影)",
-    "BSAIVDNH3Timesteps": "BSAI VDN-H3 Timesteps · 精确时间步",
-    "BSAIVDNH3EulerSampler": "BSAI VDN-H3 Euler · 采样器(v12/a3)",
-    "BSAIVDNH3Accel": "BSAI VDN-H3 Accel · 加速整合(BlockCache/CacheDiT/TE/VSA)",
-    "BSAIVDNH3Upscale": "BSAI VDN-H3 Upscale · 超分放大+高清修复",
-    "BSAIVDNH3FaceRestore": "BSAI VDN-H3 FaceRestore · 远景小脸崩坏修复",
-    "BSAIVDNH3FaceOil": "BSAI VDN-H3 FaceOil · 脸部去油",
-    "BSAIVDNH3EmptyLatentVideo": "BSAI VDN-H3 EmptyLatentVideo · H3视频5D空latent",
+    "BSAIVDNH3Loader": "BSAI VDN-H3 Loader · Weight Load (backbone + linear branch + LoRA)",
+    "BSAIVDNH3DualLora": "BSAI VDN-H3 Dual LoRA · Dual-LoRA Mix (anti-artifact)",
+    "BSAIVDNH3Timesteps": "BSAI VDN-H3 Timesteps · Precise Timesteps",
+    "BSAIVDNH3EulerSampler": "BSAI VDN-H3 Euler · Sampler (v12/a3)",
+    "BSAIVDNH3Accel": "BSAI VDN-H3 Accel · Accel Suite (BlockCache/CacheDiT/TE/VSA)",
+    "BSAIVDNH3Upscale": "BSAI VDN-H3 Upscale · Super-Resolution + Restoration",
+    "BSAIVDNH3FaceRestore": "BSAI VDN-H3 FaceRestore · Distant Small-Face Restore",
+    "BSAIVDNH3FaceOil": "BSAI VDN-H3 FaceOil · Face Oil-Sheen Removal",
+    "BSAIVDNH3EmptyLatentVideo": "BSAI VDN-H3 EmptyLatentVideo · H3 Video 5D Empty Latent",
 }
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
