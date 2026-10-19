@@ -613,36 +613,36 @@
       "mode": 0,
       "inputs": [
         {
-          "name": "images / 图像",
+          "name": "images",
           "type": "IMAGE",
           "link": 16
         }
       ],
       "outputs": [
         {
-          "name": "IMAGE / 图像",
+          "name": "IMAGE",
           "type": "IMAGE",
           "links": [
             17
           ]
         },
         {
-          "name": "width / 宽",
+          "name": "width",
           "type": "INT",
           "links": []
         },
         {
-          "name": "height / 高",
+          "name": "height",
           "type": "INT",
           "links": []
         },
         {
-          "name": "scale_used / 实际倍率",
+          "name": "scale_used",
           "type": "FLOAT",
           "links": []
         },
         {
-          "name": "info / 信息",
+          "name": "info",
           "type": "STRING",
           "links": []
         }
@@ -682,26 +682,26 @@
       "mode": 0,
       "inputs": [
         {
-          "name": "images / 图像",
+          "name": "images",
           "type": "IMAGE",
           "link": 17
         }
       ],
       "outputs": [
         {
-          "name": "IMAGE / 图像",
+          "name": "IMAGE",
           "type": "IMAGE",
           "links": [
             18
           ]
         },
         {
-          "name": "faces_detected / 检测人脸数",
+          "name": "faces_detected",
           "type": "INT",
           "links": []
         },
         {
-          "name": "info / 信息",
+          "name": "info",
           "type": "STRING",
           "links": []
         }
@@ -733,21 +733,21 @@
       "mode": 0,
       "inputs": [
         {
-          "name": "images / 图像",
+          "name": "images",
           "type": "IMAGE",
           "link": 18
         }
       ],
       "outputs": [
         {
-          "name": "IMAGE / 图像",
+          "name": "IMAGE",
           "type": "IMAGE",
           "links": [
             19
           ]
         },
         {
-          "name": "info / 信息",
+          "name": "info",
           "type": "STRING",
           "links": []
         }
@@ -954,7 +954,7 @@
       "inputs": [],
       "outputs": [
         {
-          "name": "报告 / report",
+          "name": "report",
           "type": "STRING",
           "links": []
         }

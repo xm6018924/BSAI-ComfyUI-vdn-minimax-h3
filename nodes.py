@@ -1299,20 +1299,20 @@ class BSAIVDNH3Upscale:
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {
-            "images / 图像": ("IMAGE",),
-            "scale / 放大倍数": ("FLOAT", {"default": 4.0, "min": 1.0, "max": 8.0, "step": 0.01}),
-            "model_name / 模型": ("STRING", {"default": "realesr-general-x4v3.pth",
-                                            "tooltip": "Model filename (same as BSAI-H3-upscale-4K, e.g. realesr-general-x4v3.pth)"}),
-            "tile_size / 分块大小": ("INT", {"default": 0, "min": 0, "max": 2048, "step": 16}),
-            "tile_pad / 分块重叠": ("INT", {"default": 16, "min": 0, "max": 128, "step": 4}),
-            "batch_frames / 批帧数": ("INT", {"default": 4, "min": 1, "max": 128, "step": 1}),
-            "use_fp16 / 半精度": ("BOOLEAN", {"default": True}),
-            "use_compile / 编译加速": ("BOOLEAN", {"default": True}),
-            "temporal_strength / 时序强度": ("FLOAT", {"default": 0.20, "min": 0.0, "max": 0.8, "step": 0.05}),
-            "detail_amount / 细节强度": ("FLOAT", {"default": 0.50, "min": 0.0, "max": 1.5, "step": 0.05}),
-            "detail_radius / 细节半径": ("FLOAT", {"default": 1.8, "min": 0.3, "max": 8.0, "step": 0.1}),
-            "softness / 柔和度": ("FLOAT", {"default": 0.10, "min": 0.0, "max": 1.0, "step": 0.05}),
-            "detail_mode / 细节模式": (["classic", "smart"], {"default": "smart"}),
+            "images": ("IMAGE",),
+            "scale": ("FLOAT", {"default": 4.0, "min": 1.0, "max": 8.0, "step": 0.01}),
+            "model_name": ("STRING", {"default": "realesr-general-x4v3.pth",
+                                      "tooltip": "Model filename (same as BSAI-H3-upscale-4K, e.g. realesr-general-x4v3.pth)"}),
+            "tile_size": ("INT", {"default": 0, "min": 0, "max": 2048, "step": 16}),
+            "tile_pad": ("INT", {"default": 16, "min": 0, "max": 128, "step": 4}),
+            "batch_frames": ("INT", {"default": 4, "min": 1, "max": 128, "step": 1}),
+            "use_fp16": ("BOOLEAN", {"default": True}),
+            "use_compile": ("BOOLEAN", {"default": True}),
+            "temporal_strength": ("FLOAT", {"default": 0.20, "min": 0.0, "max": 0.8, "step": 0.05}),
+            "detail_amount": ("FLOAT", {"default": 0.50, "min": 0.0, "max": 1.5, "step": 0.05}),
+            "detail_radius": ("FLOAT", {"default": 1.8, "min": 0.3, "max": 8.0, "step": 0.1}),
+            "softness": ("FLOAT", {"default": 0.10, "min": 0.0, "max": 1.0, "step": 0.05}),
+            "detail_mode": (["classic", "smart"], {"default": "smart"}),
         }}
 
     RETURN_TYPES = ("IMAGE", "INT", "INT", "FLOAT", "STRING")
@@ -1324,45 +1324,45 @@ class BSAIVDNH3Upscale:
 
     def upscale(self, **kw):
         g = kw.get
-        images = g("images / 图像")
-        scale = float(g("scale / 放大倍数", 4.0))
-        model_name = str(g("model_name / 模型", "realesr-general-x4v3.pth"))
-        tile_size = int(g("tile_size / 分块大小", 0))
-        tile_pad = int(g("tile_pad / 分块重叠", 16))
-        batch_frames = int(g("batch_frames / 批帧数", 4))
-        use_fp16 = bool(g("use_fp16 / 半精度", True))
-        use_compile = bool(g("use_compile / 编译加速", True))
-        temporal_strength = float(g("temporal_strength / 时序强度", 0.20))
-        detail_amount = float(g("detail_amount / 细节强度", 0.50))
-        detail_radius = float(g("detail_radius / 细节半径", 1.8))
-        softness = float(g("softness / 柔和度", 0.10))
-        detail_mode = str(g("detail_mode / 细节模式", "smart"))
+        images = g("images")
+        scale = float(g("scale", 4.0))
+        model_name = str(g("model_name", "realesr-general-x4v3.pth"))
+        tile_size = int(g("tile_size", 0))
+        tile_pad = int(g("tile_pad", 16))
+        batch_frames = int(g("batch_frames", 4))
+        use_fp16 = bool(g("use_fp16", True))
+        use_compile = bool(g("use_compile", True))
+        temporal_strength = float(g("temporal_strength", 0.20))
+        detail_amount = float(g("detail_amount", 0.50))
+        detail_radius = float(g("detail_radius", 1.8))
+        softness = float(g("softness", 0.10))
+        detail_mode = str(g("detail_mode", "smart"))
 
         mod = _load_upscale_module()
         if mod is not None and hasattr(mod, "BSAI_H3_Upscale4K"):
             node = mod.BSAI_H3_Upscale4K()
             kw2 = {
-                "images / 图像": images,
-                "model_name / 模型": model_name,
-                "scale / 放大倍数": scale,
-                "tile_size / 分块大小": tile_size,
-                "tile_pad / 分块重叠": tile_pad,
-                "batch_frames / 批帧数": batch_frames,
-                "use_fp16 / 半精度": use_fp16,
-                "use_compile / 编译加速": use_compile,
-                "temporal_strength / 时序强度": temporal_strength,
-                "detail_amount / 细节强度": detail_amount,
-                "detail_radius / 细节半径": detail_radius,
-                "softness / 柔和度": softness,
-                "face_restore / 人脸修复": "Off",
-                "face_det_conf / 检测置信度": 0.15,
-                "face_blend / 融合强度": 0.70,
-                "face_fidelity / 保真度": 0.60,
-                "detail_mode / 细节模式": detail_mode,
-                "dlss_style / DLSS风格": "Cinematic",
-                "dlss_intensity / DLSS强度": 1.0,
-                "dlss_detail / DLSS细节": 1.0,
-                "dlss_motion / DLSS光流": True,
+                "images": images,
+                "model_name": model_name,
+                "scale": scale,
+                "tile_size": tile_size,
+                "tile_pad": tile_pad,
+                "batch_frames": batch_frames,
+                "use_fp16": use_fp16,
+                "use_compile": use_compile,
+                "temporal_strength": temporal_strength,
+                "detail_amount": detail_amount,
+                "detail_radius": detail_radius,
+                "softness": softness,
+                "face_restore": "Off",
+                "face_det_conf": 0.15,
+                "face_blend": 0.70,
+                "face_fidelity": 0.60,
+                "detail_mode": detail_mode,
+                "dlss_style": "Cinematic",
+                "dlss_intensity": 1.0,
+                "dlss_detail": 1.0,
+                "dlss_motion": True,
             }
             try:
                 r = node.upscale(**kw2)
@@ -1386,12 +1386,12 @@ class BSAIVDNH3FaceRestore:
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {
-            "images / 图像": ("IMAGE",),
-            "face_restore / 人脸修复": (["Off", "GFPGANv1.4", "CodeFormer", "小脸增强(CodeFormer)"],
-                                       {"default": "小脸增强(CodeFormer)"}),
-            "face_det_conf / 检测置信度": ("FLOAT", {"default": 0.15, "min": 0.05, "max": 0.95, "step": 0.05}),
-            "face_blend / 融合强度": ("FLOAT", {"default": 0.70, "min": 0.1, "max": 1.0, "step": 0.05}),
-            "face_fidelity / 保真度": ("FLOAT", {"default": 0.60, "min": 0.0, "max": 1.0, "step": 0.05}),
+            "images": ("IMAGE",),
+            "face_restore": (["Off", "GFPGANv1.4", "CodeFormer", "Small-Face (CodeFormer)"],
+                             {"default": "Small-Face (CodeFormer)"}),
+            "face_det_conf": ("FLOAT", {"default": 0.15, "min": 0.05, "max": 0.95, "step": 0.05}),
+            "face_blend": ("FLOAT", {"default": 0.70, "min": 0.1, "max": 1.0, "step": 0.05}),
+            "face_fidelity": ("FLOAT", {"default": 0.60, "min": 0.0, "max": 1.0, "step": 0.05}),
         }}
 
     RETURN_TYPES = ("IMAGE", "INT", "STRING")
@@ -1403,11 +1403,11 @@ class BSAIVDNH3FaceRestore:
 
     def restore(self, **kw):
         g = kw.get
-        images = g("images / 图像")
-        fr = str(g("face_restore / 人脸修复", "小脸增强(CodeFormer)"))
-        conf = float(g("face_det_conf / 检测置信度", 0.15))
-        blend = float(g("face_blend / 融合强度", 0.70))
-        fid = float(g("face_fidelity / 保真度", 0.60))
+        images = g("images")
+        fr = str(g("face_restore", "Small-Face (CodeFormer)"))
+        conf = float(g("face_det_conf", 0.15))
+        blend = float(g("face_blend", 0.70))
+        fid = float(g("face_fidelity", 0.60))
         if fr == "Off":
             return (images, 0, "Off")
         mod = _load_upscale_module()
@@ -1415,11 +1415,11 @@ class BSAIVDNH3FaceRestore:
             node = mod.BSAI_H3_FaceRestore()
             try:
                 r = node.restore(**{
-                    "images / 图像": images,
-                    "face_restore / 人脸修复": fr,
-                    "face_det_conf / 检测置信度": conf,
-                    "face_blend / 融合强度": blend,
-                    "face_fidelity / 保真度": fid,
+                    "images": images,
+                    "face_restore": fr,
+                    "face_det_conf": conf,
+                    "face_blend": blend,
+                    "face_fidelity": fid,
                 })
                 return (r[0], r[1], r[2])
             except Exception as e:
@@ -1435,20 +1435,20 @@ class BSAIVDNH3FaceOil:
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {
-            "images / 图像": ("IMAGE",),
-            "strength / 去油强度": ("FLOAT", {
+            "images": ("IMAGE",),
+            "strength": ("FLOAT", {
                 "default": 0.60, "min": 0.0, "max": 1.0, "step": 0.05,
                 "tooltip": "Highlight suppression strength. 0 = off. 0.5-0.7 gives natural oil-sheen removal; too high flattens skin texture."}),
-            "bright_thr / 高光阈值": ("FLOAT", {
+            "bright_thr": ("FLOAT", {
                 "default": 0.78, "min": 0.5, "max": 1.0, "step": 0.01,
                 "tooltip": "Pixels brighter than this are treated as highlight (oily/overexposed areas)."}),
-            "sat_thr / 低饱和阈值": ("FLOAT", {
+            "sat_thr": ("FLOAT", {
                 "default": 0.32, "min": 0.0, "max": 1.0, "step": 0.01,
                 "tooltip": "Pixels below this saturation that are also bright are treated as oil-sheen (pure white highlights have low chroma)."}),
-            "smooth_radius / 平滑半径": ("INT", {
+            "smooth_radius": ("INT", {
                 "default": 9, "min": 1, "max": 64, "step": 1,
                 "tooltip": "Edge-preserving smooth radius (larger = softer, more detail loss)."}),
-            "face_only / 仅脸部": ("BOOLEAN", {
+            "face_only": ("BOOLEAN", {
                 "default": False,
                 "tooltip": "True: use OpenCV Haar face detection and de-oil only face regions; False: suppress highlights across the whole image."}),
         }}
@@ -1462,12 +1462,12 @@ class BSAIVDNH3FaceOil:
 
     def apply(self, **kw):
         g = kw.get
-        images = g("images / 图像")
-        strength = float(g("strength / 去油强度", 0.60))
-        bright_thr = float(g("bright_thr / 高光阈值", 0.78))
-        sat_thr = float(g("sat_thr / 低饱和阈值", 0.32))
-        radius = int(g("smooth_radius / 平滑半径", 9))
-        face_only = bool(g("face_only / 仅脸部", False))
+        images = g("images")
+        strength = float(g("strength", 0.60))
+        bright_thr = float(g("bright_thr", 0.78))
+        sat_thr = float(g("sat_thr", 0.32))
+        radius = int(g("smooth_radius", 9))
+        face_only = bool(g("face_only", False))
         if strength <= 0:
             return (images, "strength=0, no processing")
 
