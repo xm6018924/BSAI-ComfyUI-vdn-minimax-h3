@@ -777,7 +777,9 @@ class BSAIVDNH3Loader:
                 "label_on": "SW fallback",
                 "label_off": "Disabled",
                 "tooltip": "When FA4 is unavailable, enable software fallback (short-conv + gated hybrid attention), quality near-native."}),
-            "quality_mode": (["⚡ Speed (8 steps + turbo)", "🎨 Quality (16 steps + dual LoRA)", "💎 VDN Pure (linear_branch, no LoRA)"], {
+            "quality_mode": (["⚡ Speed (8 steps + turbo)", "🎨 Quality (16 steps + dual LoRA)", "💎 VDN Pure (linear_branch, no LoRA)",
+                              # 后 3 项为旧版中文标签: 兼容老工作流 JSON 保存值, load_model 内统一匹配
+                              "⚡ 速度优先 (8步+turbo)", "🎨 画质优先 (16步+双LoRA)", "💎 VDN纯质 (linear_branch+无LoRA)"], {
                 "default": "🎨 Quality (16 steps + dual LoRA)",
                 "tooltip": "Quality mode:\n"
                            "Speed: 8-step sampling + turbo LoRA, fastest but moderate quality\n"
@@ -814,15 +816,15 @@ class BSAIVDNH3Loader:
                    lora_strength=1.0, weight_dtype="default"):
         info = [_env_report()]
 
-        # 根据画质模式自动调整参数
-        if "Speed" in quality_mode:
+        # 根据画质模式自动调整参数 (新旧中英文标签等价匹配)
+        if "Speed" in quality_mode or "速度优先" in quality_mode:
             mode_turbo = True
             mode_default = False
             mode_turbo_strength = 1.0
             mode_default_strength = 0.0
             mode_steps = 8
             info.append("[BSAI VDN-H3] Quality mode: Speed (8 steps + turbo LoRA)")
-        elif "VDN Pure" in quality_mode:
+        elif "VDN Pure" in quality_mode or "VDN纯质" in quality_mode:
             mode_turbo = False
             mode_default = False
             mode_turbo_strength = 0.0
